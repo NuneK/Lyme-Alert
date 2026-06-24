@@ -11,9 +11,11 @@ output: pdf_document
 ```{r}
 #install.packages("ggplot2")
 #install.packages("dplyr")
+#install.packages("usethis")
 library(ggplot2)
 library(dplyr)
 library(maps)
+library(usethis)
 ```
 
 ##load'n'look
@@ -158,7 +160,7 @@ ne_states <- subset(            #picking just the NE states
   )
 )
 
-positives_all_time_NE <- ggplot() +
+all_time_NE <- ggplot() +
   geom_polygon(                             #geom_polygon, weird state shapes
     data = ne_states,                       #need state shape data from maps
     aes(x = long, y = lat, group = group),  #ne_states has these columns
@@ -174,9 +176,14 @@ positives_all_time_NE <- ggplot() +
   coord_fixed(1.3) +   #corrects aspect ratio, looks squished otherwise
   labs(
     color = "Positive Tests",
-    title = "Positives Dist. in New England (All Time)"
+    title = "Dist. in New England (All Time)"
   )
-positives_all_time_NE
+all_time_NE
 ```
 
+##NE by year
+```{r}
+source("graph_NE_year.R")
+graph_NE_year(2017)
+```
 
