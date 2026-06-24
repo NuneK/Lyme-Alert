@@ -16,3 +16,7 @@ sum(is.na(FET$latitude))    #how many latitude data points we're missing
 sum(is.na(FET$longitude))   #how many longitude data points we're missinh
 ```
 
+```{r}
+print("Please tell me that worked...")
+```
+
