@@ -5,18 +5,178 @@ date: "2026-06-24"
 output: pdf_document
 ---
 
+#starter
+
+##packages
+```{r}
+#install.packages("ggplot2")
+#install.packages("dplyr")
+library(ggplot2)
+library(dplyr)
+library(maps)
+```
+
+##load'n'look
 ```{r}
 #establishing characteristics of data 
 
-FET <- read.csv("FET_OK.csv")  #loading in Final Edition Tested dataset from Olivia
-head(FET)                   #looking at 1st 10 rows
-nrow(FET)                   #how many ticks we have data for 
+FET <- read.csv("FET_OK.csv")  #loading in Final Edition Tested dataset from 
+                               #Olivia
+head(FET)                      #looking at 1st 10 rows
+nrow(FET)                      #how many ticks we have data for 
 
-sum(is.na(FET$latitude))    #how many latitude data points we're missing
-sum(is.na(FET$longitude))   #how many longitude data points we're missinh
+sum(is.na(FET$latitude))       #how many latitude data points we're missing
+sum(is.na(FET$longitude))      #how many longitude data points we're missing
+```
+
+##transformation
+```{r}
+#making YES = 1 and NO = 0 for tick_infection and tick_infection_tested
+
+#these two columns are whether or not the tick in question has been tested 
+#(tick_infection_tested) and if that test came back positive for lyme disease 
+#(tick infection).
+
+FET$tick_infection_tested <- ifelse(FET$tick_infection_tested == "YES", 1, 0)
+FET$tick_infection <- ifelse(FET$tick_infection == "YES", 1, 0)
+
+#creating an additional "date" column from collection date information for use
+#later when scraping for weather data on a particular date
+
+FET$date <- as.Date(       #useful function, requires day month and year
+  paste(
+    FET$collection_year,
+    FET$collection_month,
+    FET$collection_day,
+    sep = "-"),
+  format = "%Y-%m-%d"
+)
+```
+
+##exploration
+```{r}
+#just for ticks that HAVE BEEN TESTED, I want to see across all years which 
+#months we see more ticks
+
+ticks_by_month_all_graph <- FET %>%
+  filter(tick_infection_tested == 1) %>%           #only graphing the ticks
+  ggplot(aes(x = factor(collection_month))) +      #that HAVE been tested
+  geom_bar() +
+  labs(
+    x = "Collection Month",
+    y = "Ticks Tested",
+    title = "Ticks Tested per Month"
+  )
+ticks_by_month_all_graph
+
+#now just for the ticks that TESTED POSITIVE by month across all years
+
+positives_by_month_all_graph <- FET %>%
+  filter(tick_infection == 1) %>%                 #only graphing the ticks
+  ggplot(aes(x = factor(collection_month))) +     #that tested positive
+  geom_bar() +
+  labs(
+    x = "Collection Month",
+    y = "Ticks Tested Positive",
+    title = "Ticks Positive per Month"
+  )
+positives_by_month_all_graph
 ```
 
 ```{r}
-print("Please tell me that worked...")
+#now generate the same graphs, but by year
+
+ticks_by_year_graph <- FET %>%
+  filter(tick_infection_tested == 1) %>%           #only graphing the ticks
+  ggplot(aes(x = factor(collection_year))) +      #that HAVE been tested
+  geom_bar() +
+  labs(
+    x = "Collection Year",
+    y = "Ticks Tested",
+    title = "Ticks Tested per Year"
+  )
+ticks_by_year_graph
+
+#now just for the ticks that TESTED POSITIVE by month across all years
+
+positives_by_year_graph <- FET %>%
+  filter(tick_infection == 1) %>%                 #only graphing the ticks
+  ggplot(aes(x = factor(collection_year))) +     #that tested positive
+  geom_bar() +
+  labs(
+    x = "Collection Year",
+    y = "Ticks Tested Positive",
+    title = "Ticks Positive per Year"
+  )
+positives_by_year_graph
 ```
+
+```{r}
+#okay, now we'll just do number of ticks collected by year
+total_ticks_by_year_graph <- FET %>%
+  ggplot(aes(x = factor(collection_year))) +
+  geom_bar() +
+  labs(
+    x = "Collection Year",
+    y = "Ticks Collected",
+    title = "Ticks Collected per Year"
+  )
+total_ticks_by_year_graph
+```
+
+It's weird 2022 and 2023 are so low, we'd actually expect to see the opposite. 
+Actually, I was expecting to see an increase over time generally. Probably some 
+missing data, but this will skew our significance by year.
+
+#NE case study
+```{r}
+#going to get rid of any ticks we have that are missing location coords
+FET <- FET[!is.na(FET$longitude) & !is.na(FET$latitude), ]
+
+#making a subset of the remaining data that is limited to New England, since
+#we have some outliers that are probably just random error and shouldn't factor
+#into our analysis
+
+#NOTE: FET_ne IS LIMITING COORDS TO BE IN NEW ENGLAND. WHEN DATA OUTSIDE OF NEW 
+#ENGLAND IS ADDED, REMOVE THIS LIMITATION
+
+FET_ne <- subset(
+  FET,
+  longitude >= -73.7 & longitude <= -66.9 &  #these coords include all of
+  latitude  >= 41.0  & latitude  <= 47.5     #the NE states, can be expanded
+)
+
+#making a map of coord distribution on just the ne_states
+
+states_map <- map_data("state") #built-in US state border coordinates for 
+                                #ggplot
+ne_states <- subset(            #picking just the NE states
+  states_map,
+  region %in% c(
+    "massachusetts", "maine", "vermont", "new hampshire", "rhode island", 
+    "connecticut"
+  )
+)
+
+positives_all_time_NE <- ggplot() +
+  geom_polygon(                             #geom_polygon, weird state shapes
+    data = ne_states,                       #need state shape data from maps
+    aes(x = long, y = lat, group = group),  #ne_states has these columns
+    fill = "grey25",                        #color of states
+    color = "white"                         #color of state borders
+  ) +
+  geom_point(                               #now plot collection locations
+    data = FET_ne,
+    aes(x = longitude, y = latitude, color = factor(tick_infection)),
+    alpha = 0.5,
+    size = 1.5
+  ) + 
+  coord_fixed(1.3) +   #corrects aspect ratio, looks squished otherwise
+  labs(
+    color = "Positive Tests",
+    title = "Positives Dist. in New England (All Time)"
+  )
+positives_all_time_NE
+```
+
 
