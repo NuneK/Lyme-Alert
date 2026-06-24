@@ -183,7 +183,30 @@ all_time_NE
 
 ##NE by year
 ```{r}
-source("graph_NE_year.R")
-graph_NE_year(2017)
+#note: must run graph_NE_year.R script also included in the download
+
+source("graph_NE_year.R") #wrote a function to generate a graph for a 
+                          #particular year that would be similar to all_time_NE
+
+#graph_NE_year(FET, 2017)
+#graph_NE_year(FET, 2018)
+#graph_NE_year(FET, 2019)
+#graph_NE_year(FET, 2020)
+#graph_NE_year(FET, 2021)
+#graph_NE_year(FET, 2022)
+graph_NE_year(FET, 2023)
 ```
 
+##significance
+```{r}
+#testing significance of year on if a tick is infected or not
+
+ne_year_model <- glm(tick_infection ~ collection_year,
+                     data = FET_ne,
+                     family = binomial)
+ne_year_model
+```
+We are seeing a negative statistically significant correlation between year and 
+positive ticks, but this is probably from overall tick counts. Probably look
+into proportion of ticks tested positive would be a better reflection of 
+the effect year has on lyme disease prevelence.
