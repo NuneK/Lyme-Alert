@@ -1,0 +1,18 @@
+---
+title: "Bebop Data - ZK"
+author: "Zo Kupelian"
+date: "2026-06-24"
+output: pdf_document
+---
+
+```{r}
+#establishing characteristics of data 
+
+FET <- read.csv("FET_OK.csv")  #loading in Final Edition Tested dataset from Olivia
+head(FET)                   #looking at 1st 10 rows
+nrow(FET)                   #how many ticks we have data for 
+
+sum(is.na(FET$latitude))    #how many latitude data points we're missing
+sum(is.na(FET$longitude))   #how many longitude data points we're missinh
+```
+
