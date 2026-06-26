@@ -130,6 +130,82 @@ It's weird 2022 and 2023 are so low, we'd actually expect to see the opposite.
 Actually, I was expecting to see an increase over time generally. Probably some 
 missing data, but this will skew our significance by year.
 
+## ratios
+
+Of the ticks that were tested, what proportion are positive each year? How 
+does it change year to year?
+```{r}
+#annual_summary is just grouping by collection year and adding up all of the 
+#ticks collected and the results of the tests to create a "prevalence" column
+
+annual_summary <- FET %>%
+  group_by(collection_year) %>%
+  summarise(                       #just adding up all positives and all tests
+    tested = sum(tick_infection_tested == 1, na.rm = TRUE),
+    positive = sum(tick_infection == 1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    prevalence = positive / tested,
+    se = sqrt(prevalence * (1 - prevalence) / tested), #standard error
+    lower_ci = pmax(0, prevalence - 1.96 * se), #lower 95% confidence interval
+    upper_ci = pmin(1, prevalence + 1.96 * se)  #upper 95% confidence interval
+  )
+
+#testing if there's significant difference across years
+
+#measuring the difference in positive vs. negative ticks in cbind() beacuse
+#we need the total number of ticks that are tested, which the prevalence 
+#variable we just made doesn't give us. Prevalence is just a ratio.
+
+#collection_year has to be a factor, otherwise it'll be treated as a continuous
+#numerical variable, and we're not measuring years in like 2022.5 or something
+
+prev_across_years_model <- glm(
+  cbind(positive, tested - positive) ~ factor(collection_year),
+  data = annual_summary,
+  family = binomial
+)
+
+drop1(prev_across_years_model, test = "Chisq") #LRT
+
+#these results tell us that prevalence does in fact differ across years
+#because this is just prevalence among ticks tested and not dependent on the
+#number of ticks collected per year, the weird data discrepancies don't 
+#acutally invalidate this finding.
+
+#these results will compare prevalence between years, whether it's > or <
+summary(prev_across_years_model) #log odds difference between adjacent years
+
+#test for a linear trend over time
+prevtrend_across_years_model <- glm(
+  cbind(positive, tested - positive) ~ collection_year,
+  data = annual_summary,
+  family = binomial
+)
+
+summary(prevtrend_across_years_model)
+
+# Plot
+ggplot(annual_summary, aes(x = collection_year, y = prevalence)) +
+  geom_line(group = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower_ci, ymax = upper_ci),
+    width = 0.2
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  labs(
+    x = "Collection Year",
+    y = "Prevalence of Tick Infection",
+    title = "Annual Tick Infection Prevalence"
+  ) +
+  theme_bw()
+```
+
 #NE case study
 ```{r}
 #going to get rid of any ticks we have that are missing location coords
