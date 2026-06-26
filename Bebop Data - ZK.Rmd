@@ -16,6 +16,9 @@ library(ggplot2)
 library(dplyr)
 library(maps)
 library(usethis)
+library(httr2)
+library(jsonlite)
+library(purrr)
 ```
 
 ##load'n'look
@@ -37,7 +40,7 @@ sum(is.na(FET$longitude))      #how many longitude data points we're missing
 
 #these two columns are whether or not the tick in question has been tested 
 #(tick_infection_tested) and if that test came back positive for lyme disease 
-#(tick infection).
+#(tick infection)
 
 FET$tick_infection_tested <- ifelse(FET$tick_infection_tested == "YES", 1, 0)
 FET$tick_infection <- ifelse(FET$tick_infection == "YES", 1, 0)
@@ -58,7 +61,7 @@ FET$date <- as.Date(       #useful function, requires day month and year
 ##exploration
 ```{r}
 #just for ticks that HAVE BEEN TESTED, I want to see across all years which 
-#months we see more ticks
+#months we see more ticks tested
 
 ticks_by_month_all_graph <- FET %>%
   filter(tick_infection_tested == 1) %>%           #only graphing the ticks
@@ -114,7 +117,7 @@ positives_by_year_graph
 ```
 
 ```{r}
-#okay, now we'll just do number of ticks collected by year
+#okay, now we'll just do total number of ticks collected by year
 total_ticks_by_year_graph <- FET %>%
   ggplot(aes(x = factor(collection_year))) +
   geom_bar() +
@@ -172,7 +175,7 @@ drop1(prev_across_years_model, test = "Chisq") #LRT
 #these results tell us that prevalence does in fact differ across years
 #because this is just prevalence among ticks tested and not dependent on the
 #number of ticks collected per year, the weird data discrepancies don't 
-#acutally invalidate this finding.
+#actually invalidate this finding.
 
 #these results will compare prevalence between years, whether it's > or <
 summary(prev_across_years_model) #log odds difference between adjacent years
@@ -186,7 +189,7 @@ prevtrend_across_years_model <- glm(
 
 summary(prevtrend_across_years_model)
 
-# Plot
+#plot positive ratio over time
 ggplot(annual_summary, aes(x = collection_year, y = prevalence)) +
   geom_line(group = 1) +
   geom_point(size = 3) +
@@ -205,6 +208,17 @@ ggplot(annual_summary, aes(x = collection_year, y = prevalence)) +
   ) +
   theme_bw()
 ```
+
+##location visual
+```{r}
+plot(FET_ne$longitude, FET_ne$latitude,
+     col = ifelse(FET_ne$tick_infection == 1, "red", "black"),
+     pch = 19,
+     xlab = "Longitude", ylab = "Latitude")
+legend("topright", legend = c("Infected", "Not infected"),
+       col = c("red", "black"), pch = 19)
+```
+
 
 #NE case study
 ```{r}
@@ -258,9 +272,8 @@ all_time_NE
 ```
 
 ##NE by year
+###note: must run graph_NE_year.R script also included in the download
 ```{r}
-#note: must run graph_NE_year.R script also included in the download
-
 source("graph_NE_year.R") #wrote a function to generate a graph for a 
                           #particular year that would be similar to all_time_NE
 
@@ -285,4 +298,104 @@ ne_year_model
 We are seeing a negative statistically significant correlation between year and 
 positive ticks, but this is probably from overall tick counts. Probably look
 into proportion of ticks tested positive would be a better reflection of 
-the effect year has on lyme disease prevelence.
+the effect year has on lyme disease prevalence.
+
+```{r}
+#same as above, just making the prevalence column for FET_ne specifically
+annual_summary_ne <- FET_ne %>%
+  group_by(collection_year) %>%
+  summarise(                       #just adding up all positives and all tests
+    tested = sum(tick_infection_tested == 1, na.rm = TRUE),
+    positive = sum(tick_infection == 1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    prevalence = positive / tested,
+    se = sqrt(prevalence * (1 - prevalence) / tested), #standard error
+    lower_ci = pmax(0, prevalence - 1.96 * se), #lower 95% confidence interval
+    upper_ci = pmin(1, prevalence + 1.96 * se)  #upper 95% confidence interval
+  )
+
+#again, recreating the prevalence plot across years but just for New England
+ggplot(annual_summary_ne, aes(x = collection_year, y = prevalence)) +
+  geom_line(group = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower_ci, ymax = upper_ci),
+    width = 0.2
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  labs(
+    x = "Collection Year",
+    y = "Prevalence of Tick Infection",
+    title = "Annual Tick Infection Prevalence in New England"
+  ) +
+  theme_bw()
+
+#model to test that significance across the years, but probably slope is close 
+#to 0 just based on the visualization we did previously. Might be statistically
+#significant, though.
+
+ne_prevalence_year_model <- glm(prevalence ~ collection_year,
+                     data = annual_summary_ne,
+                     family = binomial)
+ne_prevalence_year_model
+
+#is not statistically significant :(
+```
+
+##weather scraping
+```{r}
+#have to remove any ticks missing latitude, longitude, or date
+
+FET_clean <- FET_ne %>%
+  filter(
+    !is.na(latitude),
+    !is.na(longitude),
+    !is.na(date)
+  )
+nrow(FET_clean) #cleans out 149 ticks of missing data
+
+#makes a new data frame with the info for weather scraping
+weather_keys <- FET_clean %>%
+  distinct(latitude, longitude, date) #replace distinct(), it's removing
+                                      #duplicate points that we want
+#load in my custom function scrape_weather
+source("scrape_weather.R")
+
+#makes that dataframe into a list
+weather_list <- vector("list", nrow(weather_keys))
+
+#----------------------------------------------------------------------
+for (i in seq_len(nrow(weather_keys))) {
+
+  if (i %% 100 == 0) {
+    message("Completed ", i, " of ", nrow(weather_keys), " weather requests")
+  }
+#----------------------------------------------------------------------
+#everything in the above chunk is a sanity check
+#this stuff needs optimizing, basically here to tell me how long below takes
+  
+  weather_list[[i]] <- scrape_weather(
+    latitude = weather_keys$latitude[i],
+    longitude = weather_keys$longitude[i],
+    date = weather_keys$date[i]
+  )
+
+  #Sys.sleep(0.2)   #to avoid hammering the API, this is the bottleneck
+}
+weather_df <- dplyr::bind_rows(weather_list)
+head(weather_df)
+
+#this is returning everything as a list, so I need to unlist it
+weather_df <- weather_df %>%
+  mutate(across(
+    where(is.list),
+    ~ unlist(.x)
+  ))
+head(weather_df)
+```
+
