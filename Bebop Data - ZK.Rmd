@@ -19,6 +19,7 @@ library(usethis)
 library(httr2)
 library(jsonlite)
 library(purrr)
+library(lubridate)
 ```
 
 ##load'n'look
@@ -279,11 +280,11 @@ source("graph_NE_year.R") #wrote a function to generate a graph for a
 
 #graph_NE_year(FET, 2017)
 #graph_NE_year(FET, 2018)
-#graph_NE_year(FET, 2019)
+graph_NE_year(FET, 2019)
 #graph_NE_year(FET, 2020)
 #graph_NE_year(FET, 2021)
 #graph_NE_year(FET, 2022)
-graph_NE_year(FET, 2023)
+#graph_NE_year(FET, 2023)
 ```
 
 ##significance
@@ -347,6 +348,13 @@ ne_prevalence_year_model
 #is not statistically significant :(
 ```
 
+The proportion here of ticks testing positive per ticks tested total is not 
+statistically significant across years :(, but has a vague upward trend. With
+greater data presence in 2022 and 2023, conclusion and significance may change.
+
+Maybe if I break it down month by month to make monthly_summary_ne I can test
+the significance of prevalence by monthly weather
+
 ##weather scraping
 ```{r}
 #have to remove any ticks missing latitude, longitude, or date
@@ -397,5 +405,81 @@ weather_df <- weather_df %>%
     ~ unlist(.x)
   ))
 head(weather_df)
+```
+
+##weather data analysis
+```{r}
+#combining the weather data with the tick data by matching coordinates and
+#date, can use for significance testing now.
+
+FET_ne_weather <- FET_ne %>%
+  left_join(weather_df, 
+            b = c("longitude", "latitude", "date"))
+head(FET_ne_weather)
+
+#linear model for tick infection prevalence and temp/precip/humidity?
+```
+
+##monthly weather
+```{r}
+#this is something I might need to test monthly weather and prevalence 
+#eventually, but for the actual monthly heat mapping, I'm just going to pull
+#average weather data by month and upload that in layers to arcgis
+
+monthly_summary_ne <- FET_ne_weather %>%
+  mutate(
+    month = floor_date(date, "month")
+  ) %>%
+  group_by(location_county, month) %>%
+  summarise(
+    # Monthly average weather
+    temp_mean = mean(temperature_mean, na.rm = TRUE),
+    temp_max = mean(temperature_max, na.rm = TRUE),
+    temp_min = mean(temperature_min, na.rm = TRUE),
+    humidity_mean = mean(humidity_mean, na.rm = TRUE),
+    precipitation_sum = mean(precipitation_sum, na.rm = TRUE),
+    rain_sum = mean(rain_sum, na.rm = TRUE),
+    snowfall_sum = mean(snowfall_sum, na.rm = TRUE),
+    precipitation_hours = mean(precipitation_hours, na.rm = TRUE),
+
+    # Tick counts
+    ticks_tested = sum(!is.na(tick_infection_tested)),
+    ticks_positive = sum(tick_infection == 1, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+monthly_summary_ne
+```
+
+##just weather
+```{r}
+library(tigris)
+library(sf)
+library(dplyr)
+
+# New England state abbreviations
+ne_states <- c("CT", "ME", "MA", "NH", "RI", "VT")
+
+county_locations <- purrr::map_dfr(ne_states, function(st){
+
+  counties(state = st, cb = TRUE, year = 2020) |>
+    st_transform(4326) |>             # WGS84 lat/lon
+    mutate(centroid = st_centroid(geometry)) |>
+    mutate(
+      longitude = st_coordinates(centroid)[,1],
+      latitude  = st_coordinates(centroid)[,2]
+    ) |>
+    st_drop_geometry() |>
+    transmute(
+      location_county = NAME,
+      state = STUSPS,
+      latitude,
+      longitude
+    )
+
+})
+county_locations
+
+
 ```
 
