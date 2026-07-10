@@ -20,6 +20,10 @@ library(httr2)
 library(jsonlite)
 library(purrr)
 library(lubridate)
+library(tigris)
+library(sf)
+library(noaa)
+library(tibble)
 ```
 
 ##load'n'look
@@ -426,6 +430,8 @@ head(FET_ne_weather)
 #eventually, but for the actual monthly heat mapping, I'm just going to pull
 #average weather data by month and upload that in layers to arcgis
 
+#this is the monthly weather for all counties in sepetember 2020
+
 monthly_summary_ne <- FET_ne_weather %>%
   mutate(
     month = floor_date(date, "month")
@@ -451,13 +457,8 @@ monthly_summary_ne <- FET_ne_weather %>%
 monthly_summary_ne
 ```
 
-##just weather
+##county coords
 ```{r}
-library(tigris)
-library(sf)
-library(dplyr)
-
-# New England state abbreviations
 ne_states <- c("CT", "ME", "MA", "NH", "RI", "VT")
 
 county_locations <- purrr::map_dfr(ne_states, function(st){
@@ -479,7 +480,105 @@ county_locations <- purrr::map_dfr(ne_states, function(st){
 
 })
 county_locations
-
-
 ```
+
+## tester
+```{r}
+url <- paste0(
+  "https://power.larc.nasa.gov/api/temporal/monthly/point",
+  "?parameters=T2M,PRECTOTCORR",
+  "&community=AG",
+  "&longitude=-72.68",
+  "&latitude=41.76",
+  "&start=2017",
+  "&end=2023",
+  "&format=JSON"
+)
+
+test <- request(url) |>
+  req_perform() |>
+  resp_body_json()
+
+names(test$properties$parameter$T2M)
+names(test$properties$parameter$PRECTOTCORR)
+
+#the indexes ending in 13 refer to yearly summaries - not what we want
+#filter those out and return a data frame with just our monthly values
+
+get_power_county <- function(county_name, fips, lat, lon){
+
+  url <- paste0(
+    "https://power.larc.nasa.gov/api/temporal/monthly/point",
+    "?parameters=T2M,PRECTOTCORR",
+    "&community=AG",
+    "&longitude=", lon,
+    "&latitude=", lat,
+    "&start=2017",
+    "&end=2023",
+    "&format=JSON"
+  )
+
+  x <- request(url) |>
+    req_perform() |>
+    resp_body_json()
+
+  temp <- x$properties$parameter$T2M
+  precip <- x$properties$parameter$PRECTOTCORR
+
+  # Keep only YYYY01-YYYY12
+  keep <- !grepl("13$", names(temp))
+
+  temp <- temp[keep]
+  precip <- precip[keep]
+
+  dates <- names(temp)
+
+  date <- as.Date(
+    paste0(dates, "01"),
+    format = "%Y%m%d"
+  )
+
+  tibble(
+    county = county_name,
+    fips = fips,
+    year = lubridate::year(date),
+    month = lubridate::month(date),
+    temperature_C = as.numeric(unlist(temp)),
+    precip_mm = as.numeric(unlist(precip)) *
+      lubridate::days_in_month(date)
+  )
+}
+
+#re-running the county loop now
+weather_data <- purrr::pmap_dfr(
+  list(
+    ne_counties$NAME,
+    ne_counties$fips,
+    ne_counties$lat,
+    ne_counties$lon
+  ),
+  get_power_county
+)
+
+nrow(weather_data)
+head(weather_data)
+length(unique(weather_data$county))
+
+write.csv(
+  weather_data,
+  "new_england_weather_2017_2023.csv",
+  row.names = FALSE
+)
+
+#we have weather for every month for every county of New England now
+#for some reason, we only have 62 counties instead of 68, but I'm assuming
+#some have been collapsed by the NASA API for ease of use
+
+#now, we need to convert the county assignment to a format that arcgis can read
+#and map, as well as changing the month/year columns into something that can
+#make a timeline appear
+
+#probably ask Liv about what format arcgis used for her heatmap gif
+```
+
 
