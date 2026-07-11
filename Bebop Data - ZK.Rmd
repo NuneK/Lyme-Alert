@@ -484,6 +484,7 @@ county_locations
 
 ## tester
 ```{r}
+#scraping from NASA API for the county averages per month
 url <- paste0(
   "https://power.larc.nasa.gov/api/temporal/monthly/point",
   "?parameters=T2M,PRECTOTCORR",
@@ -495,6 +496,7 @@ url <- paste0(
   "&format=JSON"
 )
 
+#running a tester to see what the names are resulting from the API
 test <- request(url) |>
   req_perform() |>
   resp_body_json()
@@ -525,7 +527,7 @@ get_power_county <- function(county_name, fips, lat, lon){
   temp <- x$properties$parameter$T2M
   precip <- x$properties$parameter$PRECTOTCORR
 
-  # Keep only YYYY01-YYYY12
+  # Keep only YYYY01-YYYY12, don't need the 13th annual
   keep <- !grepl("13$", names(temp))
 
   temp <- temp[keep]
@@ -538,6 +540,7 @@ get_power_county <- function(county_name, fips, lat, lon){
     format = "%Y%m%d"
   )
 
+  #making a table of the results and the corresponding month/year
   tibble(
     county = county_name,
     fips = fips,
@@ -586,6 +589,7 @@ pull_year_weather <- function(year_chosen) {
   return(year_weather)
 }
 
+#looping all months for all relevant years through pull_year_weather
 lapply(2017:2023, pull_year_weather)
 ```
 
