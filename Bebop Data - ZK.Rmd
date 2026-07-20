@@ -593,4 +593,31 @@ pull_year_weather <- function(year_chosen) {
 lapply(2017:2023, pull_year_weather)
 ```
 
+so we have weather data for all of the counties for each month between 2017 and
+2023
+
+The challenge now is to make that data into something that can be mapped onto
+arcgis, so we can overlay the weather data on top of tick prevalence
+
+To do this, I bet I have to make a new data frame with ticks binned into month
+with their coordinates, and their positive/negative/untested result.
+
+Then, I visualize the ticks where they are, but the weather data for each month
+needs to be visualized regardless.
+
+The challenge will be to get the weather data shown for each county across the 
+timeline of arcgis. That'll be the first step, I'll try to do that for one year
+at a time. We'll start with 2017 and just try to make a map of how weather 
+changes across one year.
+
+```{r}
+weather_2017 <- pull_year_weather(2017)
+
+weather_2017 <- weather_2017 %>%
+  relocate(fips, .before = county) %>%
+  mutate(
+    date = as.Date(sprintf("%04d-%02d-01", year, month))
+  )
+weather_2017
+```
 
