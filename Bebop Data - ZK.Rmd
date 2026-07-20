@@ -610,14 +610,56 @@ timeline of arcgis. That'll be the first step, I'll try to do that for one year
 at a time. We'll start with 2017 and just try to make a map of how weather 
 changes across one year.
 
+#package for ArcGIS
 ```{r}
+counties <- counties(cb = TRUE, year = 2023) #CT counties got renamed in 2022
+NE_states <- c(
+  "09",      #CT
+  "23",      #ME
+  "25",      #MA
+  "33",      #NH
+  "44",      #RI
+  "50"       #VT
+)
+counties_ne <- counties %>%
+  filter(STATEFP %in% NE_states)
+counties_ne
+
 weather_2017 <- pull_year_weather(2017)
 
 weather_2017 <- weather_2017 %>%
   relocate(fips, .before = county) %>%
   mutate(
-    date = as.Date(sprintf("%04d-%02d-01", year, month))
+    GEOID = sprintf("%05s", fips), #sprintf() is a function returning a string
+                                   #in a format I specify using the values 
+                                   #in a column
+    
+                                   #in these cases, fips to strings and numbers
+                                   #to full dates
+    date = as.Date(sprintf("%04d-%02d-01", year, month)) 
   )
 weather_2017
+
+weather_map_2017 <- counties_ne %>%
+  left_join(weather_2017, by = "GEOID")
+
+#just checking for NAs, finding none for 2017. Do this for all years, though
+#weather_map_2017 %>%
+#  filter(is.na(geometry)) %>%
+#  select(NAME, GEOID)
+
+#checking CT because it just *had* to be extra with funky county names
+weather_map_2017 %>%
+  filter(substr(fips, 1, 2) == "09") %>% #09 is connecticut's 1st two fips #s
+  distinct(fips, county)
+
+#export geopackage for ArcGIS - if it can't process, 
+st_write(
+  weather_map_2017,
+  "ne_monthly_weather_2017.gpkg",
+  delete_dsn = TRUE
+)
 ```
+
+
 
