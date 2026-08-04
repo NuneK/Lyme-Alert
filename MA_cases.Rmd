@@ -25,6 +25,7 @@ I want to make a map of total cases in each county in 2000, to begin with.
 
 ```{r}
 # <5 was used for de-identification, but because that's a character, I'm replacing it with 2.5
+
 MA_cases <- lapply(MA_cases, function(x) gsub("<5", "2.5", x))
 MA_cases <- as.data.frame(MA_cases)
 
@@ -72,11 +73,12 @@ MA_cases_2000
 merged <- left_join(county_map, MA_cases_2000, by = "County_Name")
 merged
 
-ggplot(merged) +
+heatmap_2000 <- ggplot(merged)+
   geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
   scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
   theme_void() +
   labs(title = "MA Cases per County Heatmap")
+heatmap_2000
 ```
 
 Going to make that mapping process above into a function 
@@ -104,13 +106,12 @@ heatmap <- ggplot(merged_data) +
   scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
   theme_void() +
   labs(title = paste("MA Cases per County Heatmap in", year_choice))
-
 heatmap
+
+png(filename = paste0("MA_case_heatmap_", year_choice, ".png"))
 }
 
 lapply(2000:2025, year_heatmap)
-
-year_heatmap(2024)
 ```
 
 
