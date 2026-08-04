@@ -56,11 +56,12 @@ county_map <- counties(state = "MA", cb = TRUE, year = 2000) %>%
   rename("County_Name" = "NAME")
 ```
 
-
+Keeping this around for now as a tester, but when the function works properly
+with no issues, this can be deleted.
 ```{r}
 #for 2000
 MA_cases_2000 <- MA_cases %>%
-  filter(Year == "2000") %>%
+  filter(Year == 2000) %>%
   rename("County_Name" = "County")
 
 county_map <- counties(state = "MA", cb = TRUE, year = 2000)
@@ -77,7 +78,7 @@ heatmap_2000 <- ggplot(merged)+
   geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
   scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
   theme_void() +
-  labs(title = "MA Cases per County Heatmap")
+  labs(title = "MA Cases per County Heatmap in 2002")
 heatmap_2000
 ```
 
@@ -87,6 +88,7 @@ Going to make that mapping process above into a function
 #note with this function! All of the cases need to be in numeric format
 
 year_heatmap <- function(year_choice) {
+  
   MA_cases_year <- MA_cases %>%
     filter(Year == year_choice) %>%
     rename("County_Name" = "County")
@@ -96,10 +98,8 @@ county_map <- county_map %>%
   rename("County_Name" = "NAME")
 
 MA_cases_year$County_Name <- str_replace_all(MA_cases_year$County_Name, " County", "")
-MA_cases_year
 
 merged_data <- left_join(county_map, MA_cases_year, by = "County_Name")
-merged_data
 
 heatmap <- ggplot(merged_data) +
   geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
