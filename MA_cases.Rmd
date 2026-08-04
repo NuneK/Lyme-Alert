@@ -12,6 +12,7 @@ library(dplyr)
 library(ggplot2)
 library(tigris)
 library(sf)
+library(stringr)
 ```
 
 
@@ -44,18 +45,14 @@ MA_cases <- MA_cases %>%
     December = as.numeric(December)
   )
 
+#making an extra column with the total cases for each county summed over the year
 MA_cases$year_total <- rowSums(MA_cases[, c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")], na.rm = TRUE)
-MA_cases
 
 MA_cases %>%
   rename("County_Name" = "County")
 
 county_map <- counties(state = "MA", cb = TRUE, year = 2000) %>%
   rename("County_Name" = "NAME")
-
-
-
-
 ```
 
 
@@ -87,11 +84,33 @@ Going to make that mapping process above into a function
 ```{r}
 #note with this function! All of the cases need to be in numeric format
 
-year_heatmap <- function(year) {
-  
+year_heatmap <- function(year_choice) {
+  MA_cases_year <- MA_cases %>%
+    filter(Year == year_choice) %>%
+    rename("County_Name" = "County")
+
+county_map <- counties(state = "MA", cb = TRUE, year = 2000)
+county_map <- county_map %>%
+  rename("County_Name" = "NAME")
+
+MA_cases_year$County_Name <- str_replace_all(MA_cases_year$County_Name, " County", "")
+MA_cases_year
+
+merged_data <- left_join(county_map, MA_cases_year, by = "County_Name")
+merged_data
+
+heatmap <- ggplot(merged_data) +
+  geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
+  theme_void() +
+  labs(title = paste("MA Cases per County Heatmap in", year_choice))
+
+heatmap
 }
 
+lapply(2000:2025, year_heatmap)
 
+year_heatmap(2024)
 ```
 
 
