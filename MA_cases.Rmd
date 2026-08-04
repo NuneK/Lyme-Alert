@@ -1,0 +1,97 @@
+---
+title: "MA_cases"
+author: "Zo Kupelian"
+date: "2026-08-04"
+output: pdf_document
+---
+
+```{r}
+#install.packages("readxl")
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tigris)
+library(sf)
+```
+
+
+```{r}
+MA_cases <- read_excel("Lyme_by_County_2000_2025.xlsx")
+MA_cases
+```
+
+I want to make a map of total cases in each county in 2000, to begin with.
+
+```{r}
+# <5 was used for de-identification, but because that's a character, I'm replacing it with 2.5
+MA_cases <- lapply(MA_cases, function(x) gsub("<5", "2.5", x))
+MA_cases <- as.data.frame(MA_cases)
+
+MA_cases <- MA_cases %>%
+  mutate(
+    Year = as.numeric(Year),
+    January = as.numeric(January), 
+    February = as.numeric(February),
+    March = as.numeric(March), 
+    April = as.numeric(April), 
+    May = as.numeric(May),
+    June = as.numeric(June), 
+    July = as.numeric(July), 
+    August = as.numeric(August),
+    September = as.numeric(September), 
+    October = as.numeric(October), 
+    November = as.numeric(November), 
+    December = as.numeric(December)
+  )
+
+MA_cases$year_total <- rowSums(MA_cases[, c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")], na.rm = TRUE)
+MA_cases
+
+MA_cases %>%
+  rename("County_Name" = "County")
+
+county_map <- counties(state = "MA", cb = TRUE, year = 2000) %>%
+  rename("County_Name" = "NAME")
+
+
+
+
+```
+
+
+```{r}
+#for 2000
+MA_cases_2000 <- MA_cases %>%
+  filter(Year == "2000") %>%
+  rename("County_Name" = "County")
+
+county_map <- counties(state = "MA", cb = TRUE, year = 2000)
+county_map <- county_map %>%
+  rename("County_Name" = "NAME")
+
+MA_cases_2000$County_Name <- str_replace_all(MA_cases_2000$County_Name, " County", "")
+MA_cases_2000
+
+merged <- left_join(county_map, MA_cases_2000, by = "County_Name")
+merged
+
+ggplot(merged) +
+  geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
+  theme_void() +
+  labs(title = "MA Cases per County Heatmap")
+```
+
+Going to make that mapping process above into a function 
+
+```{r}
+#note with this function! All of the cases need to be in numeric format
+
+year_heatmap <- function(year) {
+  
+}
+
+
+```
+
+

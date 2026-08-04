@@ -24,6 +24,7 @@ library(tigris)
 library(sf)
 library(noaa)
 library(tibble)
+library(stringr)
 ```
 
 ##load'n'look
@@ -179,8 +180,8 @@ drop1(prev_across_years_model, test = "Chisq") #LRT
 
 #these results tell us that prevalence does in fact differ across years
 #because this is just prevalence among ticks tested and not dependent on the
-#number of ticks collected per year, the weird data discrepancies don't 
-#actually invalidate this finding.
+#number of ticks collected per year - this way,  the weird data discrepancies 
+#don't actually invalidate this finding.
 
 #these results will compare prevalence between years, whether it's > or <
 summary(prev_across_years_model) #log odds difference between adjacent years
@@ -208,22 +209,41 @@ ggplot(annual_summary, aes(x = collection_year, y = prevalence)) +
   ) +
   labs(
     x = "Collection Year",
-    y = "Prevalence of Tick Infection",
+    y = "% of Collected Ticks Testing Positive",
     title = "Annual Tick Infection Prevalence"
   ) +
   theme_bw()
 ```
 
-##location visual
+#world mapping
 ```{r}
-plot(FET_ne$longitude, FET_ne$latitude,
-     col = ifelse(FET_ne$tick_infection == 1, "red", "black"),
-     pch = 19,
-     xlab = "Longitude", ylab = "Latitude")
-legend("topright", legend = c("Infected", "Not infected"),
-       col = c("red", "black"), pch = 19)
+world_map <- map_data("world")
+ticks <- data.frame(date = FET$date, lon = c(FET$longitude), lat = c(FET$latitude))
+
+world_map_graphed <- ggplot() +
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "grey", color = "white", linewidth = 0.2) +
+  geom_point(data = ticks, aes(x = lon, y = lat), color = "red", size = 1)
+world_map_graphed
 ```
 
+Got some interesting outliers here - I want to see if the in Indonesia points are
+maybe just an input error, maybe positive signs where there should be negatives.
+
+```{r}
+outlier <- ticks %>%
+  filter(lon > 30)
+outlier
+
+outlier_world_map <- ggplot() +
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "grey", color = "white", linewidth = 0.2) +
+  geom_point(data = outlier, aes(x = lon, y = lat), color = "red", size = 1)
+outlier_world_map
+```
+
+We have 7 outliers all from the same spot in Indonesia and 1 outlier in Kazahkstan
+on different dates, which is interesting.
+
+I'll filter those out, for now, and start a New England case study.
 
 #NE case study
 ```{r}
@@ -276,19 +296,32 @@ all_time_NE <- ggplot() +
 all_time_NE
 ```
 
+##location visual
+```{r}
+plot(FET_ne$longitude, FET_ne$latitude,
+     col = ifelse(FET_ne$tick_infection == 1, "red", "black"),
+     pch = 19,
+     xlab = "Longitude", ylab = "Latitude")
+legend("topright", legend = c("Infected", "Not infected"),
+       col = c("red", "black"), pch = 19)
+```
+
+
 ##NE by year
 ###note: must run graph_NE_year.R script also included in the download
 ```{r}
+#this is a custom function I made, it'll exist in the repo
+
 source("graph_NE_year.R") #wrote a function to generate a graph for a 
                           #particular year that would be similar to all_time_NE
 
 #graph_NE_year(FET, 2017)
 #graph_NE_year(FET, 2018)
-graph_NE_year(FET, 2019)
+#graph_NE_year(FET, 2019)
 #graph_NE_year(FET, 2020)
 #graph_NE_year(FET, 2021)
 #graph_NE_year(FET, 2022)
-#graph_NE_year(FET, 2023)
+graph_NE_year(FET, 2023)
 ```
 
 ##significance
@@ -335,7 +368,7 @@ ggplot(annual_summary_ne, aes(x = collection_year, y = prevalence)) +
   ) +
   labs(
     x = "Collection Year",
-    y = "Prevalence of Tick Infection",
+    y = "% of Ticks Infected",
     title = "Annual Tick Infection Prevalence in New England"
   ) +
   theme_bw()
@@ -430,8 +463,6 @@ head(FET_ne_weather)
 #eventually, but for the actual monthly heat mapping, I'm just going to pull
 #average weather data by month and upload that in layers to arcgis
 
-#this is the monthly weather for all counties in sepetember 2020
-
 monthly_summary_ne <- FET_ne_weather %>%
   mutate(
     month = floor_date(date, "month")
@@ -463,14 +494,14 @@ ne_states <- c("CT", "ME", "MA", "NH", "RI", "VT")
 
 county_locations <- purrr::map_dfr(ne_states, function(st){
 
-  counties(state = st, cb = TRUE, year = 2020) |>
-    st_transform(4326) |>             # WGS84 lat/lon
-    mutate(centroid = st_centroid(geometry)) |>
+  counties(state = st, cb = TRUE, year = 2020) %>%
+    st_transform(4326) %>%             # WGS84 lat/lon
+    mutate(centroid = st_centroid(geometry)) %>%
     mutate(
       longitude = st_coordinates(centroid)[,1],
       latitude  = st_coordinates(centroid)[,2]
-    ) |>
-    st_drop_geometry() |>
+    ) %>%
+    st_drop_geometry() %>%
     transmute(
       location_county = NAME,
       state = STUSPS,
@@ -639,7 +670,10 @@ weather_2017 <- weather_2017 %>%
     date = as.Date(sprintf("%04d-%02d-01", year, month)) 
   )
 weather_2017
+```
 
+#PROBLEMS MIGHT BE HERE, WORTH CHECKING OUT LATER AND TRYING TO ALTERNATIVELY LOAD INTO ARCGIS FOR TIMELINE MAKING
+```{r}
 weather_map_2017 <- counties_ne %>%
   left_join(weather_2017, by = "GEOID")
 
@@ -661,5 +695,52 @@ st_write(
 )
 ```
 
+#Massachusetts
+
+I've got lyme cases, tick prevalence, and weather data for massachusetts. What
+I'm going to do now is set up a framework to take that data and run every 
+analysis I can think of on it, and frame it in such a way that any data from 
+anywhere can run through it like that.
+
+Mine is broken by county, so we'll start with that.
+
+```{r}
+FET_MA <- FET %>%
+  select(location_county, location_town, tick_id, tick_infection_tested,
+         tick_infection, latitude, longitude, date)
+
+FET_MA <- FET_MA[!is.na(FET_MA$longitude) & !is.na(FET_MA$latitude), ]
+FET_MA
+
+#I need a function that will take the borders of Massachusetts, and only include
+#the latitude/longitude points of FET_MA that are *in* those borders
+
+states_data <- map_data("county")
+
+MA_map <- subset(states_data, region %in%
+                   "massachusetts")
+
+#double check that MA_map is just a map of the MA counties
+
+map <- ggplot() +
+  geom_polygon(
+    data = MA_map,
+    aes(x = long, y = lat, group = group),
+    fill = "blue",
+    color = "white"
+  )
+map
+
+#yay, looks good!
+
+sum(str_count(FET_MA$location_county, "BERKSHIRE|FRANKLIN|HAMPSHIRE|HAMPDEN|
+              WORCESTER|ESSEX|MDDLESEX|SUFFOLK|NORFOLK|PLYMOUTH|BRISTOL|
+              BARNSTABLE|DUKES|NANTUCKET"), na.rm = TRUE)
+
+#well, bad news. Apparently none of the data points are present in MA, or at 
+#least, none of them have a Massachusetts county to contend with.
+
+
+```
 
 
