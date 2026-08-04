@@ -74,12 +74,12 @@ MA_cases_2000
 merged <- left_join(county_map, MA_cases_2000, by = "County_Name")
 merged
 
-heatmap_2000 <- ggplot(merged)+
+heatmap_2000 <- ggplot(merged) +
   geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
   scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
   theme_void() +
   labs(title = "MA Cases per County Heatmap in 2002")
-heatmap_2000
+print(heatmap_2000)
 ```
 
 Going to make that mapping process above into a function 
@@ -107,9 +107,9 @@ heatmap <- ggplot(merged_data) +
   theme_void() +
   labs(title = paste("MA Cases per County Heatmap in", year_choice))
 heatmap
-
-png(filename = paste0("MA_case_heatmap_", year_choice, ".png"))
 }
+
+#year_heatmap(2006)
 
 lapply(2000:2025, year_heatmap)
 ```
