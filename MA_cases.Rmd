@@ -5,17 +5,20 @@ date: "2026-08-04"
 output: pdf_document
 ---
 
+#libraries
 ```{r}
 #install.packages("readxl")
+install.packages("magick")
 library(readxl)
 library(dplyr)
 library(ggplot2)
 library(tigris)
 library(sf)
 library(stringr)
+library(magick)
 ```
 
-
+#load data
 ```{r}
 MA_cases <- read_excel("Lyme_by_County_2000_2025.xlsx")
 MA_cases
@@ -23,6 +26,7 @@ MA_cases
 
 I want to make a map of total cases in each county in 2000, to begin with.
 
+#little data cleaning
 ```{r}
 # <5 was used for de-identification, but because that's a character, I'm replacing it with 2.5
 
@@ -56,62 +60,80 @@ county_map <- counties(state = "MA", cb = TRUE, year = 2000) %>%
   rename("County_Name" = "NAME")
 ```
 
-Keeping this around for now as a tester, but when the function works properly
-with no issues, this can be deleted.
-```{r}
-#for 2000
-MA_cases_2000 <- MA_cases %>%
-  filter(Year == 2000) %>%
-  rename("County_Name" = "County")
+#heatmapping function
 
-county_map <- counties(state = "MA", cb = TRUE, year = 2000)
-county_map <- county_map %>%
-  rename("County_Name" = "NAME")
-
-MA_cases_2000$County_Name <- str_replace_all(MA_cases_2000$County_Name, " County", "")
-MA_cases_2000
-
-merged <- left_join(county_map, MA_cases_2000, by = "County_Name")
-merged
-
-heatmap_2000 <- ggplot(merged) +
-  geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
-  scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
-  theme_void() +
-  labs(title = "MA Cases per County Heatmap in 2002")
-print(heatmap_2000)
-```
-
-Going to make that mapping process above into a function 
+See the comments for standardized vs. not standardized
 
 ```{r}
+#make a directory to put the heatmaps in
+dir_out <- file.path(".", "heatmaps_folder")
+dir.create(dir_out, recursive = TRUE)
+
 #note with this function! All of the cases need to be in numeric format
 
 year_heatmap <- function(year_choice) {
-  
+
+#year by year, so filter the data by the year the user wants to see
   MA_cases_year <- MA_cases %>%
     filter(Year == year_choice) %>%
-    rename("County_Name" = "County")
+    rename("County_Name" = "County") #rename for joining
 
+#MA counties haven't changed from 2000, so we can use the data from 2000
 county_map <- counties(state = "MA", cb = TRUE, year = 2000)
 county_map <- county_map %>%
-  rename("County_Name" = "NAME")
+  rename("County_Name" = "NAME") #rename for joining
 
+#Barnstable County --> Barnstable in the MA_cases_year data frame
 MA_cases_year$County_Name <- str_replace_all(MA_cases_year$County_Name, " County", "")
 
+#join
 merged_data <- left_join(county_map, MA_cases_year, by = "County_Name")
 
+#standardizing across the entire range of case counts
+case_limits <- c(0, 2000) #max cases per year in one county is ~1700
+
+#-------------------------------------------------------------------------------
+#remove case limits from above and below if we want to see counties compare to
+#each other in a certain year
+
+#keep case limits if we're looking across the whole 25-year-long period of time
+#-------------------------------------------------------------------------------
+
+#time to plot
 heatmap <- ggplot(merged_data) +
   geom_sf(aes(fill = year_total), color = "white", linewidth = 0.2) +
-  scale_fill_viridis_c(option = "plasma", name = "Number of Cases") +
+  scale_fill_viridis_c(limits = case_limits, option = "plasma", name = "Number of Cases") +
   theme_void() +
-  labs(title = paste("MA Cases per County Heatmap in", year_choice))
-heatmap
+  labs(title = paste("MA Cases per County Heatmap in ", year_choice))
+print(heatmap)
+
+fp <- file.path(dir_out, paste0("MA_case_heatmap_", year_choice, ".png"))
+
+#time to save
+ggsave(plot = heatmap, filename = fp, device = "png")
+
 }
 
-#year_heatmap(2006)
+#uncomment below to get all the heatmaps for all the years
 
-lapply(2000:2025, year_heatmap)
+#lapply(2000:2024, year_heatmap)
 ```
 
+#make a gif
+```{r}
+# listing the file names, and reading them in
+
+heatmaps <- list.files(path = ".", full.names = TRUE)
+heatmaps_list <- lapply(heatmaps, image_read)
+
+#if you can't beat 'em, join 'em
+heatmaps_joined <- image_join(heatmaps_list)
+
+#animate!
+heatmaps_animated <- image_animate(heatmaps_joined, fps = 2)
+heatmaps_animated
+
+#save the gif
+image_write(image = heatmaps_animated)
+```
 
