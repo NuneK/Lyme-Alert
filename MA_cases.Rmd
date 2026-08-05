@@ -9,6 +9,7 @@ output: pdf_document
 ```{r}
 #install.packages("readxl")
 install.packages("magick")
+library(tidyverse)
 library(readxl)
 library(dplyr)
 library(ggplot2)
@@ -116,24 +117,72 @@ ggsave(plot = heatmap, filename = fp, device = "png")
 
 #uncomment below to get all the heatmaps for all the years
 
-#lapply(2000:2024, year_heatmap)
+#lapply(2000:2025, year_heatmap)
 ```
 
 #make a gif
 ```{r}
 # listing the file names, and reading them in
 
-heatmaps <- list.files(path = ".", full.names = TRUE)
+heatmaps <- list.files(dir_out, full.names = TRUE)
 heatmaps_list <- lapply(heatmaps, image_read)
 
 #if you can't beat 'em, join 'em
 heatmaps_joined <- image_join(heatmaps_list)
 
 #animate!
-heatmaps_animated <- image_animate(heatmaps_joined, fps = 2)
+heatmaps_animated <- image_animate(heatmaps_joined, fps = 4)
 heatmaps_animated
 
 #save the gif
-image_write(image = heatmaps_animated)
+image_write(image = heatmaps_animated, path = "MA_cases_heatmap.gif")
 ```
+
+So, the fact of a 5-year-long inconsistency in a 25-year-long collection window
+makes analysis kind of challenging, but that doesn't mean we're not going to try.
+
+I think first things first we'll need to graph each year on an x axis and number of cases on a y axis, and make a vertical stack of all the counties' case counts in that year, differentiated by color. This'll show the trend, which I expect will have a close-to-exponential increase.
+
+Can run models.
+
+#analysis
+```{r}
+#overall plot
+cases_plot <- ggplot() +
+  geom_point(data = MA_cases, aes(x = Year, y = year_total, color = County)) +
+  geom_smooth(data = MA_cases, aes(x = Year, y = year_total), method = "lm", color = "black", se = TRUE)
+cases_plot
+
+#again, this is super screwed by the 2016-2021 data...
+
+#pivot longer for year-by-year visualization
+MA_cases_longer <- pivot_longer(
+    data = MA_cases,
+    cols = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+    names_to = "Month",
+    values_to = "Cases"
+    ) %>%
+  select("County", "Month", "Cases", "year_total", "Year")
+MA_cases_longer
+
+#function to make a graph each year
+cases_by_county_graph <- function(year){
+  
+  MA_cases_year <- MA_cases_longer %>%
+    filter(Year == year)
+
+cases_plot_year <- ggplot() +
+  geom_point(data = MA_cases_year, aes(x = Month, y = Cases, color = County)) +
+  ylim(0, 450) +
+  labs(title = paste0("Monthly Cases per County in ", year))
+print(cases_plot_year)
+}
+
+#lapply(2000:2025, cases_by_county_graph)
+```
+
+
+
+
+
 
