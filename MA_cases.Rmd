@@ -8,7 +8,7 @@ output: pdf_document
 #libraries
 ```{r}
 #install.packages("readxl")
-install.packages("magick")
+#install.packages("magick")
 library(tidyverse)
 library(readxl)
 library(dplyr)
@@ -150,7 +150,7 @@ Can run models.
 #overall plot
 cases_plot <- ggplot() +
   geom_point(data = MA_cases, aes(x = Year, y = year_total, color = County)) +
-  geom_smooth(data = MA_cases, aes(x = Year, y = year_total), method = "lm", color = "black", se = TRUE)
+  geom_smooth(data = MA_cases, aes(x = Year, y = year_total), method = "glm", color = "black", se = TRUE)
 cases_plot
 
 #again, this is super screwed by the 2016-2021 data...
@@ -178,11 +178,52 @@ cases_plot_year <- ggplot() +
 print(cases_plot_year)
 }
 
+#uncomment the line below to get the trend yearly
 #lapply(2000:2025, cases_by_county_graph)
 ```
 
+Missing data for 2016-2021 needs to be imputed, which is not ideal.
 
+Looks like polynomial regression to me - not quite linear. Random forest regression?
 
+#--------------------------------------------------------------------------------
+#Until imputation is done correctly, everythign will be done on yearly basis,NOT a monthly one. Monthly analysis will come after 2016-2021 have data.
+#--------------------------------------------------------------------------------
 
+#NOT IMPUTED
+```{r}
+model1 <- lm(year_total ~ Year + County, data = MA_cases)
+summary(model1)
+```
+
+Year is obviously significant, even with the diminished counts for 2016-2021
+
+Dukes, Franklin, Hampshire, Middlesex, Nantucket, Plymouth, Suffolk, and Worcester counties
+all see significance in the linear model, though some of them are positive and some are negative, probably because 
+of the five-year-issue (FYI).
+
+#Imputation
+```{r}
+#cleaning out the year_total dates for 2016-2021 so that they can be imputed
+MA_cases_pre <- MA_cases
+
+for (i in 2016:2021) {
+  MA_cases_pre$year_total[MA_cases_pre$Year == i] <- NA
+}
+MA_cases_pre
+```
+
+```{r}
+df <- data.frame(
+  id = 1:4,
+  category = c("A", "B", "C", "A"),
+  score = c(10, 20, 30, 40)
+)
+
+df$score[df$category == "A"] <- NA
+
+print(df)
+class(df)
+```
 
 

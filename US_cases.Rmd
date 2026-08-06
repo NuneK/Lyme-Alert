@@ -1,0 +1,108 @@
+---
+title: "US_cases"
+author: "Zo Kupelian"
+date: "2026-08-06"
+output: pdf_document
+---
+
+#libraries
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(stringr)
+library(magick)
+```
+
+#load'n'look
+```{r}
+US_cases <- read.csv("US_case_incidence.csv")
+US_cases <- US_cases %>%
+  rename("2008" = "X2008", 
+         "2009" = "X2009", 
+         "2010" = "X2010", 
+         "2011" = "X2011", 
+         "2012" = "X2012", 
+         "2012" = "X2012", 
+         "2013" = "X2013", 
+         "2014" = "X2014", 
+         "2015" = "X2015", 
+         "2016" = "X2016", 
+         "2017" = "X2017", 
+         "2018" = "X2018",
+         "2019" = "X2019", 
+         "2020" = "X2020", 
+         "2021" = "X2021", 
+         "2022" = "X2022", 
+         "2023" = "X2023")
+
+US_cases_longer <- pivot_longer(
+    data = US_cases,
+    cols = c("2008", "2009", "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023"),
+    names_to = "Year",
+    values_to = "Cases"
+  )
+US_cases_longer
+max(US_cases_longer$Cases)
+```
+
+#heatmapping function
+```{r}
+dir_out <- file.path(".", "US_heatmaps_folder")
+dir.create(dir_out, recursive = TRUE)
+
+US_map <- states(cb = TRUE, year = 2024)
+US_map <- US_map %>%
+    rename("State" = "NAME")
+
+US_cases_longer <- US_cases_longer %>%
+  mutate(
+    Year = as.numeric(Year),
+    Cases = as.numeric(Cases)
+  )
+
+US_year_heatmap <- function(year_choice) {
+
+#year by year, so filter the data by the year the user wants to see
+  US_cases_year <- US_cases_longer %>%
+    filter(Year == year_choice)
+
+#join
+merged_data <- left_join(US_map, US_cases_year, by = "State")
+
+#standardizing across the entire range of case counts
+case_limits <- c(0, 30000) #max cases per year in one state is ~22000, I think
+
+#-------------------------------------------------------------------------------
+#remove case limits from above and below if we want to see states compare to
+#each other in a certain year
+
+#keep case limits if we're looking across the whole period of time
+#-------------------------------------------------------------------------------
+
+#time to plot
+heatmap <- ggplot(merged_data) +
+  geom_sf(aes(fill = Cases), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(limits = case_limits, option = "plasma", name = "Number of Cases") +
+  theme_void() +
+  labs(title = paste("US Cases per State Heatmap in ", year_choice))
+print(heatmap)
+
+fp <- file.path(dir_out, paste0("US_case_heatmap_", year_choice, ".png"))
+
+#time to save
+ggsave(plot = heatmap, filename = fp, device = "png")
+
+}
+
+US_year_heatmap(2020)
+```
+
+```{r}
+
+```
+
+
+

@@ -210,7 +210,7 @@ ggplot(annual_summary, aes(x = collection_year, y = prevalence)) +
   labs(
     x = "Collection Year",
     y = "% of Collected Ticks Testing Positive",
-    title = "Annual Tick Infection Prevalence"
+    title = "Annual Lyme-in-Tick Prevalence"
   ) +
   theme_bw()
 ```
