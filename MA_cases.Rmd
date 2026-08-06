@@ -131,7 +131,7 @@ heatmaps_list <- lapply(heatmaps, image_read)
 heatmaps_joined <- image_join(heatmaps_list)
 
 #animate!
-heatmaps_animated <- image_animate(heatmaps_joined, fps = 4)
+heatmaps_animated <- image_animate(heatmaps_joined, fps = 2)
 heatmaps_animated
 
 #save the gif

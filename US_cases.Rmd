@@ -19,50 +19,81 @@ library(magick)
 #load'n'look
 ```{r}
 US_cases <- read.csv("US_case_incidence.csv")
+
+#need to manually remove all of the commas from the data cells
+US_cases$X2008 <- gsub(",", "", US_cases$X2008)
+US_cases$X2009 <- gsub(",", "", US_cases$X2009)
+US_cases$X2010 <- gsub(",", "", US_cases$X2010)
+US_cases$X2011 <- gsub(",", "", US_cases$X2011)
+US_cases$X2012 <- gsub(",", "", US_cases$X2012)
+US_cases$X2013 <- gsub(",", "", US_cases$X2013)
+US_cases$X2014 <- gsub(",", "", US_cases$X2014)
+US_cases$X2015 <- gsub(",", "", US_cases$X2015)
+US_cases$X2016 <- gsub(",", "", US_cases$X2016)
+US_cases$X2017 <- gsub(",", "", US_cases$X2017)
+US_cases$X2018 <- gsub(",", "", US_cases$X2018)
+US_cases$X2019 <- gsub(",", "", US_cases$X2019)
+US_cases$X2020 <- gsub(",", "", US_cases$X2020)
+US_cases$X2021 <- gsub(",", "", US_cases$X2021)
+US_cases$X2022 <- gsub(",", "", US_cases$X2022)
+US_cases$X2023 <- gsub(",", "", US_cases$X2023)
+
+#make it numeric
 US_cases <- US_cases %>%
-  rename("2008" = "X2008", 
-         "2009" = "X2009", 
-         "2010" = "X2010", 
-         "2011" = "X2011", 
-         "2012" = "X2012", 
-         "2012" = "X2012", 
-         "2013" = "X2013", 
-         "2014" = "X2014", 
-         "2015" = "X2015", 
-         "2016" = "X2016", 
-         "2017" = "X2017", 
-         "2018" = "X2018",
-         "2019" = "X2019", 
-         "2020" = "X2020", 
-         "2021" = "X2021", 
-         "2022" = "X2022", 
-         "2023" = "X2023")
+  mutate(
+    X2008 = as.numeric(X2008),
+    X2009 = as.numeric(X2009),
+    X2010 = as.numeric(X2010),
+    X2011 = as.numeric(X2011),
+    X2012 = as.numeric(X2012),
+    X2013 = as.numeric(X2013),
+    X2014 = as.numeric(X2014),
+    X2015 = as.numeric(X2015),
+    X2016 = as.numeric(X2016),
+    X2017 = as.numeric(X2017),
+    X2018 = as.numeric(X2018),
+    X2019 = as.numeric(X2019),
+    X2020 = as.numeric(X2020),
+    X2021 = as.numeric(X2021),
+    X2022 = as.numeric(X2022),
+    X2023 = as.numeric(X2023)
+  )
 
 US_cases_longer <- pivot_longer(
     data = US_cases,
-    cols = c("2008", "2009", "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023"),
+    cols = c("X2008", "X2009", "X2010", "X2011", "X2012", "X2013", "X2014", "X2015", "X2016", "X2017", "X2018", "X2019", "X2020", "X2021", "X2022", "X2023"),
     names_to = "Year",
     values_to = "Cases"
   )
+head(US_cases_longer)
+```
+
+#dataprep for heatmapping
+```{r}
+#make a folder for these heatmaps, going to reference for the gif later
+dir_out <- file.path(".", "US_heatmaps_folder")
+dir.create(dir_out, recursive = TRUE)
+
+#just map data
+US_map <- states(cb = TRUE, year = 2024)
+US_map <- US_map %>%
+  rename("State" = "NAME") %>%
+  filter(!State %in% c("United States Virgin Islands", 
+                       "Commonwealth of the Northern Mariana Islands", "Guam",   #have to exclude these, no data
+                       "American Samoa", "Puerto Rico", "Hawaii")) %>%
+  shift_geometry() #makes the map fit better on the plot
+
+#take the Xs out of the Year column, they were useful for renaming until this point
+US_cases_longer$Year <- gsub("X", "", US_cases_longer$Year)
+US_cases_longer$State <- gsub("\x86", "", US_cases_longer$State, fixed = TRUE, useBytes = TRUE)
+
+#no idea why \x86 is attached to Wisconsin, Pennsylvania, West Virginia, Virginia, Vermont, Hawaii, but removed it now
+
 US_cases_longer
-max(US_cases_longer$Cases)
 ```
 
 #heatmapping function
 ```{r}
-dir_out <- file.path(".", "US_heatmaps_folder")
-dir.create(dir_out, recursive = TRUE)
-
-US_map <- states(cb = TRUE, year = 2024)
-US_map <- US_map %>%
-    rename("State" = "NAME")
-
-US_cases_longer <- US_cases_longer %>%
-  mutate(
-    Year = as.numeric(Year),
-    Cases = as.numeric(Cases)
-  )
-
 US_year_heatmap <- function(year_choice) {
 
 #year by year, so filter the data by the year the user wants to see
@@ -73,7 +104,7 @@ US_year_heatmap <- function(year_choice) {
 merged_data <- left_join(US_map, US_cases_year, by = "State")
 
 #standardizing across the entire range of case counts
-case_limits <- c(0, 30000) #max cases per year in one state is ~22000, I think
+case_limits <- c(0, 2000) #max cases per year in one state is ~22000, I think
 
 #-------------------------------------------------------------------------------
 #remove case limits from above and below if we want to see states compare to
@@ -87,7 +118,7 @@ heatmap <- ggplot(merged_data) +
   geom_sf(aes(fill = Cases), color = "white", linewidth = 0.2) +
   scale_fill_viridis_c(limits = case_limits, option = "plasma", name = "Number of Cases") +
   theme_void() +
-  labs(title = paste("US Cases per State Heatmap in ", year_choice))
+  labs(title = paste("US Cases per State Heatmap in", year_choice))
 print(heatmap)
 
 fp <- file.path(dir_out, paste0("US_case_heatmap_", year_choice, ".png"))
@@ -98,11 +129,36 @@ ggsave(plot = heatmap, filename = fp, device = "png")
 }
 
 US_year_heatmap(2020)
+
+lapply(2008:2023, US_year_heatmap)
 ```
 
+#test for the year 2020
 ```{r}
+US_cases_2020 <- US_cases_longer %>%
+    filter(Year == 2020)
 
+#join
+merged_data_2020 <- left_join(US_map, US_cases_2020, by = "State")
+as.data.frame(merged_data_2020)
+
+#standardizing across the entire range of case counts
+case_limits <- c(0, 4000) #max cases per year in one state is ~22000, I think
+
+#-------------------------------------------------------------------------------
+#remove case limits from above and below if we want to see states compare to
+#each other in a certain year
+
+#keep case limits if we're looking across the whole period of time
+#-------------------------------------------------------------------------------
+
+#time to plot
+heatmap <- ggplot(merged_data_2020) +
+  geom_sf(aes(fill = Cases), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(limits = case_limits, option = "plasma", name = "Number of Cases") +
+  theme_void() +
+  labs(title = paste("US Cases per State Heatmap in", 2020))
+print(heatmap)
 ```
-
 
 
