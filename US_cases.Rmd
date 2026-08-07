@@ -7,13 +7,19 @@ output: pdf_document
 
 #libraries
 ```{r}
+#install.packages("tidycensus")
 library(ggplot2)
 library(dplyr)
 library(tidyverse)
+library(tidyr)
 library(tigris)
 library(sf)
 library(stringr)
 library(magick)
+library(tidycensus)
+library(httr)
+library(readxl)
+library(readr)
 ```
 
 #load'n'look
@@ -102,9 +108,10 @@ US_year_heatmap <- function(year_choice) {
 
 #join
 merged_data <- left_join(US_map, US_cases_year, by = "State")
+as.data.frame(merged_data)
 
 #standardizing across the entire range of case counts
-case_limits <- c(0, 2000) #max cases per year in one state is ~22000, I think
+case_limits <- c(0, 25000) #max cases per year in one state is ~22000, I think
 
 #-------------------------------------------------------------------------------
 #remove case limits from above and below if we want to see states compare to
@@ -128,37 +135,79 @@ ggsave(plot = heatmap, filename = fp, device = "png")
 
 }
 
-US_year_heatmap(2020)
-
 lapply(2008:2023, US_year_heatmap)
 ```
 
-#test for the year 2020
+Now, this is just case numbers. I wonder if I can make prevalence maps...
+
+To do that, I'd need state populations for every year between 2008 and 2023, 
+which should be doable.
+
+Use # of cases/population per year, and I've got prevalence.
+
+Can't be that hard!
+
+#load in pop data
 ```{r}
-US_cases_2020 <- US_cases_longer %>%
-    filter(Year == 2020)
+census_api_key("9c6d69c7cf5285a77a6203f0ef22788ba10bd69", install = TRUE)
 
-#join
-merged_data_2020 <- left_join(US_map, US_cases_2020, by = "State")
-as.data.frame(merged_data_2020)
+#2008-2009 data, since the census stored population data differently across years, for some reason
 
-#standardizing across the entire range of case counts
-case_limits <- c(0, 4000) #max cases per year in one state is ~22000, I think
+tmp_xls <- tempfile(fileext = ".xls")
+GET("https://www2.census.gov/programs-surveys/popest/tables/2000-2010/intercensal/state/st-est00int-01.xls", write_disk(tmp_xls))
 
-#-------------------------------------------------------------------------------
-#remove case limits from above and below if we want to see states compare to
-#each other in a certain year
-
-#keep case limits if we're looking across the whole period of time
-#-------------------------------------------------------------------------------
-
-#time to plot
-heatmap <- ggplot(merged_data_2020) +
-  geom_sf(aes(fill = Cases), color = "white", linewidth = 0.2) +
-  scale_fill_viridis_c(limits = case_limits, option = "plasma", name = "Number of Cases") +
-  theme_void() +
-  labs(title = paste("US Cases per State Heatmap in", 2020))
-print(heatmap)
+pop_2000s <- read_excel(tmp_xls, skip = 3) %>%
+  rename("State" = "...1", "2008_pop" = "2008", "2009_pop" = "2009") %>%
+  select("State", "2008_pop", "2009_pop")
+pop_2000s
 ```
+
+```{r}
+#2010-2019 data
+
+pop_2010s <- read_csv(
+  "https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/state/detail/sc-est2019-alldata6.csv",
+  show_col_types = FALSE
+)
+
+#this massive data set is super informative. 0 is the combined, 1+ is the different
+#categories. For now, I'm just interested in the total number, so I'm only including
+#the rows that have 0s in them.
+
+pop_2010s <- pop_2010s %>%
+  filter(SEX == 0, ORIGIN == 0) %>%
+  group_by(NAME) %>%
+  summarise(across(starts_with("POPESTIMATE") | starts_with("CENSUS") | starts_with("ESTIMATESBASE"), 
+                   sum, .names = "{.col}")) %>%
+  tidyr::pivot_longer(-NAME, names_to = "year_var", values_to = "population") %>%
+  mutate(year = readr::parse_number(year_var)) %>%
+  select(NAME, year, population) %>%
+  arrange(NAME, year)
+pop_2010s
+```
+
+```{r}
+#2020-2023 data
+
+pop_2020s <- read_csv(
+  "https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/state/totals/NST-EST2023-ALLDATA.csv",
+  show_col_types = FALSE
+) %>%
+  filter(SUMLEV == "040") %>%
+  select(NAME, starts_with("POPESTIMATE")) %>%
+  pivot_longer(-NAME, names_to = "year", values_to = "population") %>%
+  mutate(year = as.integer(gsub("POPESTIMATE", "", year)))
+pop_2020s
+```
+
+
+
+
+
+
+
+
+
+
 
 
