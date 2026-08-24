@@ -24,6 +24,7 @@ library(readr)
 
 #load'n'look
 ```{r}
+#this was available on the DHHS website, but it'll be uploaded to the repo
 US_cases <- read.csv("US_case_incidence.csv")
 
 #need to manually remove all of the commas from the data cells
@@ -74,6 +75,7 @@ US_cases_longer <- pivot_longer(
 head(US_cases_longer)
 ```
 
+
 #dataprep for heatmapping
 ```{r}
 #make a folder for these heatmaps, going to reference for the gif later
@@ -81,7 +83,7 @@ dir_out <- file.path(".", "US_heatmaps_folder")
 dir.create(dir_out, recursive = TRUE)
 
 #just map data
-US_map <- states(cb = TRUE, year = 2024)
+US_map <- states(cb = TRUE, year = 2024) #2024 state borders
 US_map <- US_map %>%
   rename("State" = "NAME") %>%
   filter(!State %in% c("United States Virgin Islands", 
@@ -117,7 +119,7 @@ case_limits <- c(0, 25000) #max cases per year in one state is ~22000, I think
 #remove case limits from above and below if we want to see states compare to
 #each other in a certain year
 
-#keep case limits if we're looking across the whole period of time
+#keep case limits if we're looking across the whole period of time, incidence
 #-------------------------------------------------------------------------------
 
 #time to plot
@@ -149,7 +151,7 @@ Can't be that hard!
 
 #load in pop data
 ```{r}
-census_api_key("9c6d69c7cf5285a77a6203f0ef22788ba10bd69", install = TRUE)
+census_api_key("9c6d69c7cf5285a77a6203f0ef22788ba10bd69", install = TRUE, overwrite = TRUE)
 
 #2008-2009 data, since the census stored population data differently across years, for some reason
 
@@ -175,10 +177,9 @@ pop_2010s <- read_csv(
 #the rows that have 0s in them.
 
 pop_2010s <- pop_2010s %>%
-  filter(SEX == 0, ORIGIN == 0) %>%
+  filter(SEX == 0, ORIGIN == 0) %>% #all sexees and all origins
   group_by(NAME) %>%
-  summarise(across(starts_with("POPESTIMATE") | starts_with("CENSUS") | starts_with("ESTIMATESBASE"), 
-                   sum, .names = "{.col}")) %>%
+  summarise(across(starts_with("POPESTIMATE"), sum, .names = "{.col}")) %>%
   tidyr::pivot_longer(-NAME, names_to = "year_var", values_to = "population") %>%
   mutate(year = readr::parse_number(year_var)) %>%
   select(NAME, year, population) %>%
@@ -188,6 +189,9 @@ pop_2010s
 
 ```{r}
 #2020-2023 data
+
+#this one actually summarizes on the state level for SUMLEV == "040", which is
+#very nice and convenient instead of processing like the 2010s.
 
 pop_2020s <- read_csv(
   "https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/state/totals/NST-EST2023-ALLDATA.csv",
@@ -200,10 +204,53 @@ pop_2020s <- read_csv(
 pop_2020s
 ```
 
+#wrangle
 
+```{r}
+#next step is to wrangle this data into a format that can be combined
 
+pop_2000s$State <- gsub(".", "", pop_2000s$State, fixed = TRUE)
+pop_2000s <- pop_2000s %>%
+  filter(!State %in% c("United States", "Northeast", "Midwest", "South", "West", 
+                       "Hawaii", "Puerto Rico")) %>%
+  filter(row_number() <= n()-9) %>%
+  rename("2008" = "2008_pop", "2009" = "2009_pop") %>%
+  pivot_longer(!State, names_to = "year", values_to = "population")
 
+pop_2010s <- pop_2010s %>%
+  rename("State" = "NAME") %>%
+  filter(!State %in% c("United States", "Northeast", "Midwest", "South", "West", 
+                       "Hawaii", "Puerto Rico"))
+pop_2020s <- pop_2020s %>%
+  rename("State" = "NAME") %>%
+  filter(!State %in% c("United States", "Northeast", "Midwest", "South", "West", 
+                       "Hawaii", "Puerto Rico"))
 
+pop_2000s
+pop_2010s
+pop_2020s
+```
+
+Very lovely, now I need to join them in a way that has each state's year.
+
+```{r}
+pop_early = rbind(pop_2000s, pop_2010s)
+pop_early <- pop_early[order(pop_early$State),]
+pop_early
+
+pop = rbind(pop_early, pop_2020s)
+pop <- pop[order(pop$State), ]
+pop
+```
+
+Nice, now pop and US_cases_longer should match up
+```{r}
+US_cases_state <- US_cases_longer %>%
+  filter(!State %in% c("U.S. Total"))
+
+pop
+US_cases_state
+```
 
 
 
