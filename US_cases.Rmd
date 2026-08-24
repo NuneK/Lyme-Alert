@@ -248,13 +248,81 @@ Nice, now pop and US_cases_longer should match up
 US_cases_state <- US_cases_longer %>%
   filter(!State %in% c("U.S. Total"))
 
+pop$combine <- paste(pop$State, pop$year)
 pop
+
+US_cases_state$combine <- paste(US_cases_state$State, US_cases_state$Year)
 US_cases_state
+
+# if you can't beat 'em...
+
+nationwide <- left_join(pop, US_cases_state, by = "combine")
+nationwide <- nationwide %>%
+  select(-one_of('Year', 'combine', 'State.y')) %>%
+  rename("State" = "State.x", "cases" = "Cases")
+nationwide
 ```
 
+Now to make a prevalence column. 
 
+```{r}
+nationwide <- nationwide %>%
+  mutate(inci =  (cases/population)*10000)
+nationwide
+```
 
+#incidence
 
+```{r}
+dir_out_inci <- file.path(".", "incidence_heatmaps_folder")
+dir.create(dir_out_inci, recursive = TRUE)
 
+incidence_heatmap <- function(year_choice) {
+#year by year, so filter the data by the year the user wants to see
+  incidences <- nationwide %>%
+    filter(year == year_choice)
 
+#join
+merged_data <- left_join(US_map, incidences, by = "State")
+as.data.frame(merged_data)
+
+#for standardization
+inci_limits <- c(0, 30)
+
+#time to plot
+heatmap <- ggplot(merged_data) +
+  geom_sf(aes(fill = inci), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(limits = inci_limits, option = "plasma", name = "Number of Cases per 10,000") +
+  theme_void() +
+  labs(title = paste("Cases per 10,000 people in", year_choice))
+print(heatmap)
+
+fp <- file.path(dir_out_inci, paste0("incidence_heatmap_", year_choice, ".png"))
+
+#time to save
+ggsave(plot = heatmap, filename = fp, device = "png")
+}
+
+lapply(2008:2023, incidence_heatmap)
+
+```
+
+```{r}
+heatmaps <- list.files(dir_out_inci, full.names = TRUE)
+heatmaps_list <- lapply(heatmaps, image_read)
+
+#if you can't beat 'em, join 'em
+heatmaps_joined <- image_join(heatmaps_list)
+
+#animate!
+heatmaps_animated <- image_animate(heatmaps_joined, fps = 2)
+heatmaps_animated
+
+#save the gif
+image_write(image = heatmaps_animated, path = "US_inci_heatmap.gif")
+```
+
+Okay, very cool maps! Now for the fun part. 
+
+Gotta make some graphs and models, then graph the models.
 
