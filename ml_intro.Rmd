@@ -1,0 +1,330 @@
+---
+title: "ml_intro"
+author: "Zo Kupelian"
+date: "2026-08-31"
+output: pdf_document
+---
+
+#Option 1
+
+```{r}
+#install.packages("tidymodels")
+#install.packages("ranger")
+library(tidymodels)
+library(ranger)
+```
+
+split for test and train
+```{r}
+#for reproducability
+
+set.seed(94)
+
+#initial_split is a useful way to take a chunk for training
+data_split <- initial_split(iris, prop = 0.8, strata = Species)
+
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+Going to try to predict species based on all of the other variables in iris
+```{r}
+iris_recipe <- recipe(Species ~ ., data = train_data) %>%
+  step_normalize(all_numeric_predictors()) #centering and scaling numeric data
+```
+
+```{r}
+#defining a random forest classification model
+
+rf_spec <- rand_forest(trees = 100) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+```
+
+Creating machine learning workflow
+```{r}
+iris_workflow <- workflow () %>%
+  add_recipe(iris_recipe) %>%
+  add_model(rf_spec)
+```
+
+train and evaluate model
+```{r}
+final_fit <- last_fit(iris_workflow, data_split)
+
+collect_metrics(final_fit)
+```
+
+```{r}
+test_predictions <- collect_predictions(final_fit)
+test_predictions %>%
+  conf_mat(truth = Species, estimate = .pred_class)
+```
+
+#Option 2
+
+following the guide here:
+
+https://shittuolumide.medium.com/machine-learning-basics-building-your-first-predictive-model-in-r-010ffe88d6e4
+
+This uses caret and tidyverse, which implies that it might be updated to use tidymodels instead
+
+Going to use mtcars for the first attempt, then try with iris later
+
+```{r}
+#install.packages("tidyverse")
+#install.packages("caret")
+library(tidyverse)
+library(caret)
+```
+
+```{r}
+data <- mtcars
+data
+
+#look for missingness
+sum(is.na(data))
+
+#summary stats for all the columns
+summary(data)
+
+#split the data into 80% training and 20% testing
+train_index <- createDataPartition(data$mpg, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+#train the model, using the train() function from caret
+#this is a linear regression model, hence the use of "lm"
+
+model <- train(
+  mpg ~ wt + hp, #forumula, mpg as a function of wt and hp
+  data = train_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5) #five-fold cross validation
+)
+
+print(model)
+```
+
+Evaluating the model
+```{r}
+#make predictions
+predictions <- predict(model, newdata = test_data)
+
+results <- data.frame(
+  Actual = test_data$mpg,
+  Predicted = predictions
+)
+
+#root mean square error (RMSE)
+rmse <- sqrt(mean((results$Actual - results$Predicted)^2))
+print(paste("RMSE:", rmse))
+```
+
+Not bad! Let's graph it for fun
+```{r}
+plot(test_data$mpg, predictions, main = "Actual vs. Predicted",
+     xlab = "Actual mpg", ylab = "Predicted mpg")
+abline(0, 1, col = "red")
+```
+
+##recreate
+Okay, let's see if I understand this enough to recreate if for iris
+
+```{r}
+sum(is.na(iris))
+summary(iris)
+
+train_iris_index <- createDataPartition(iris$Petal.Length, p = 0.8, list = FALSE)
+train_iris_data <- iris[train_iris_index, ]
+test_iris_data <- iris[-train_iris_index, ]
+```
+
+```{r}
+#training a model to predict petal length given sepal width and length
+
+iris_model <- train(
+  Petal.Length ~ Sepal.Width + Sepal.Length,
+  data = train_iris_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5) #this specifically I need to clarify for myself
+)
+
+print(iris_model)
+```
+
+```{r}
+iris_predictions <- predict(iris_model, newdata = test_iris_data)
+
+iris_results <- data.frame(
+  Iris_Actual = test_iris_data$Petal.Length,
+  Iris_Predicted = iris_predictions
+)
+
+iris_rmse <- sqrt(mean((iris_results$Iris_Actual - iris_results$Iris_Predicted)^2))
+
+print(paste("RMSE:", iris_rmse))
+```
+
+Visualize!
+```{r}
+plot(test_iris_data$Petal.Length, iris_predictions, main = "Actual vs. Predicted Petal Length",
+     xlab = "Actual petal length",
+     ylab = "Predicted petal length")
+abline(0, 1, col = "red")
+```
+
+##real data
+
+Okay, looks like I can. That's pretty cool. Maybe I'll give it a shot with the app data.
+
+```{r}
+#install.packages("xlsx")
+library(xlsx)
+library(tidyverse)
+library(maps)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+app_data <- read.xlsx("app_data.xlsx", sheetIndex = 1)
+app_data <- app_data %>%
+  select(created_at_utc, latitude, longitude, result, readable, confidence, test_line, invalid_reason, user_action, reasoning, parsed_result, parsed_confidence, parsed_control_line, parsed_test_line, parsed_invalid_reason)
+
+app_data
+```
+
+##exploration
+```{r}
+world_map <- map_data("world")
+
+ticks <- data.frame(lon = as.numeric(c(app_data$longitude)), lat = as.numeric(c(app_data$latitude)))
+
+world_map_graphed <- ggplot() +
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "grey", color = "white", linewidth = 0.2) +
+  geom_point(data = ticks, aes(x = lon, y = lat), color = "red", size = 1)
+world_map_graphed
+```
+
+Wow, that's kind of interesting, I wasn't expecting to have some app users in India and Singapore
+
+They'll make for some interesting outliers.
+
+I'll test just using latitude and longitude for now, but I'll set up weather pulls from an API later. Also figure out a way to include date, with later/sooner as the options
+
+##data cleaning
+```{r}
+#invalids are supposed to be such a small percentage of the dataset in the future that removing them shouldn't impact the model
+#though, with this starting dataset they are a kind of huge portion
+
+sum(app_data$result == "invalid", na.rm = TRUE) #76 out of 182 samples are invalid. yikes.
+
+#filtering out invalid results
+app_data_clean <- app_data %>%
+  filter(!grepl("invalid", result, ignore.case = TRUE)) %>%
+  mutate(across(where(is.character), ~ str_replace_all(., c("positive" = "1", "negative" = "0"))))
+
+app_data_clean$result <- as.numeric(app_data_clean$result)
+app_data_clean$latitude <- as.numeric(app_data_clean$latitude)
+app_data_clean$longitude <- as.numeric(app_data_clean$longitude)
+app_data_clean
+```
+
+
+```{r}
+set.seed(911)
+
+train_tick_index <- createDataPartition(app_data_clean$result, p = 0.8, list = FALSE)
+train_tick_data <- app_data_clean[train_tick_index, ]
+test_tick_data <- app_data_clean[-train_tick_index, ]
+```
+
+```{r}
+tick_model <- train(
+  result ~ latitude + longitude,
+  data = train_tick_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5) #figure out what this is!!
+)
+
+print(tick_model)
+```
+
+```{r}
+tick_predictions <- predict(tick_model, newdata = test_tick_data)
+
+tick_results <- data.frame(
+  Tick_Actual = test_tick_data$result,
+  Tick_Predicted = tick_predictions
+)
+
+tick_rmse <- sqrt(mean((tick_results$Tick_Actual - tick_results$Tick_Predicted)^2))
+print(paste("RMSE:", tick_rmse))
+```
+
+```{r}
+plot(test_tick_data$result, tick_predictions, main = "Actual vs. Predicted Testing Result",
+     xlab = "Actual test result",
+     ylab = "Predicted test result"
+)
+abline(0, 1, col = "blue")
+```
+
+So! The result of this model isn't great! But I'd have been unbelievably 
+surprised if it was considering it's using linear regression for a binary,
+spatial set of data.
+
+Next steps are going to be swapping "lm" out for something else, and getting 
+weather data to provide that model.
+
+##take 2
+
+```{r}
+set.seed(911)
+
+train_tick_index <- createDataPartition(app_data_clean$result, p = 0.8, list = FALSE)
+train_tick_data <- app_data_clean[train_tick_index, ]
+test_tick_data <- app_data_clean[-train_tick_index, ]
+```
+
+```{r}
+tick_model <- train(
+  result ~ latitude + longitude,
+  data = train_tick_data,
+  method = "glm", #generalized linear regression
+  family = binomial(link = "logit"), #specifying logistic regression
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+print(tick_model)
+```
+
+```{r}
+tick_predictions_prob <- predict(tick_model, newdata = test_tick_data, type = "prob")
+tick_predictions <- predict(tick_model, newdata = test_tick_data, type = "raw") #0 or 1
+
+tick_results <- data.frame(
+  Tick_Actual = test_tick_data$result,
+  Tick_Predicted = tick_predictions
+)
+
+confusionMatrix(tick_predictions, test_tick_data$result)
+```
+
+```{r}
+tick_results <- data.frame(
+  Tick_Actual = test_tick_data$result,
+  Tick_Predicted = tick_predictions,
+  Probability = tick_predictions_prob$`1`  # Predicted probability
+)
+
+# Confusion Matrix Visualization
+ggplot(tick_results, aes(x = Tick_Actual, fill = Tick_Predicted)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Actual vs. Predicted Classifications",
+       x = "Actual Result", y = "Count") +
+  theme_minimal()
+```
+
+
