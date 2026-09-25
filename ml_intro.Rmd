@@ -281,38 +281,78 @@ weather data to provide that model.
 ##take 2
 
 ```{r}
+#set result to a factor for glm with caret, this is a classification model
+app_data_clean$result <- as.factor(app_data_clean$result)
+
 set.seed(911)
 
+#80% training, 20% testing. Mostly bc the number of data points we have is small
+
+#stratified by result, maintaining the same class proportion in both sets so we
+#don't end up with a testing set full of negatives
+
 train_tick_index <- createDataPartition(app_data_clean$result, p = 0.8, list = FALSE)
+
+#all this is is an index of row numbers for the training set. Just numbers.
+
 train_tick_data <- app_data_clean[train_tick_index, ]
 test_tick_data <- app_data_clean[-train_tick_index, ]
 ```
 
 ```{r}
+#uses caret::train() function to train the model, may want to look at alternatives
+
+#result (positive or negative) predicted by latitude and longitude, using only
+#geographic coordinates to classify the result
+
 tick_model <- train(
   result ~ latitude + longitude,
   data = train_tick_data,
-  method = "glm", #generalized linear regression
-  family = binomial(link = "logit"), #specifying logistic regression
-  trControl = trainControl(method = "cv", number = 5)
+  method = "glm", #generalized linear regression model
+  family = binomial(link = "logit"), #specifying logistic regression, binary outcome and outputting probs 0 to 1
+  trControl = trainControl(method = "cv", number = 5) #5-fold cross-validation during training
 )
 
+#What does that trControl mean? It divides the training data into 5 subsets, trains 5 times, each time using 4 folds and 1 to validate
+#you can increase this, but the more subsets you divide the training data into, the smaller they get. Diminishing returns and all that.
+
 print(tick_model)
+#coefficients, performance metrics, sample sizes, etc.
 ```
 
-```{r}
-tick_predictions_prob <- predict(tick_model, newdata = test_tick_data, type = "prob")
-tick_predictions <- predict(tick_model, newdata = test_tick_data, type = "raw") #0 or 1
+An accuracy of 62.8% percent with the 5-fold validation isn't amazing, but it's 
+better than flipping a coin!
 
+Below is predictions and confusion matrix
+```{r}
+#these are probability predictions on the test set, taking the test data and 
+#using it to predict "result = 1" or "result = 0"
+
+#eventually we'll compare and see if it matches up to the *actual* "result = 1" or "result = 0"
+
+#P(result = 1 | latitude, longitude)
+
+tick_predictions_prob <- predict(tick_model, newdata = test_tick_data, type = "prob") #type = "prob" is probabilities for each class
+tick_predictions <- predict(tick_model, newdata = test_tick_data, type = "raw") #0 or 1 is returned as the predicted class
+
+#making that dataframe of the actual test data and the predicted test data
 tick_results <- data.frame(
   Tick_Actual = test_tick_data$result,
   Tick_Predicted = tick_predictions
 )
 
+#confusion matrix to show true positives, true negatives, false positives, false 
+#negatives, accuracy, sensitivity, specificity, etc.
 confusionMatrix(tick_predictions, test_tick_data$result)
 ```
 
+70% accuracy, so not terrible. Good sensitivity, specificity could be better.
+
 ```{r}
+#this is visualization
+
+# the `1` extracts the probability column for the positive class
+
 tick_results <- data.frame(
   Tick_Actual = test_tick_data$result,
   Tick_Predicted = tick_predictions,
@@ -320,6 +360,9 @@ tick_results <- data.frame(
 )
 
 # Confusion Matrix Visualization
+
+#x axis shows the actual results, the fill colors is the predicted results
+
 ggplot(tick_results, aes(x = Tick_Actual, fill = Tick_Predicted)) +
   geom_bar(position = "dodge") +
   labs(title = "Actual vs. Predicted Classifications",
@@ -327,4 +370,6 @@ ggplot(tick_results, aes(x = Tick_Actual, fill = Tick_Predicted)) +
   theme_minimal()
 ```
 
-
+The model does a great job predicting when ticks are going to be negative based
+on location data. It does a less great job when ticks are going to be positive
+based on location data.
