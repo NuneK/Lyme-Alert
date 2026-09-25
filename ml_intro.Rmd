@@ -373,3 +373,9 @@ ggplot(tick_results, aes(x = Tick_Actual, fill = Tick_Predicted)) +
 The model does a great job predicting when ticks are going to be negative based
 on location data. It does a less great job when ticks are going to be positive
 based on location data.
+
+#TESTING GIT ABILITY
+```{r}
+print("This is a test, please work.")
+```
+
