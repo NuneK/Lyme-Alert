@@ -10,8 +10,13 @@ output: pdf_document
 ```{r}
 #install.packages("tidymodels")
 #install.packages("ranger")
+#install.packages("leaflet")
+library(leaflet)
 library(tidymodels)
 library(ranger)
+library(ggplot2)
+library(raster)
+library(sp)
 ```
 
 split for test and train
@@ -374,8 +379,328 @@ The model does a great job predicting when ticks are going to be negative based
 on location data. It does a less great job when ticks are going to be positive
 based on location data.
 
-#TESTING GIT ABILITY
+Okay, let's attempt another visualization where I have on map with the test
+points in a color, then color for the predicted points.
+
 ```{r}
-print("This is a test, please work.")
+app_data_clean
+
 ```
+
+
+#Tick movement
+
+```{r}
+#parsing datetime from the created_at_utc column
+
+#recognizing the current format of the date column needs to be adjusted to 
+#as.POSIXct format
+app_data_clean$created_at_utc <- as.POSIXct(app_data_clean$created_at_utc,
+                                            format = "%Y-%m-%dT%H:%M:%OS",
+                                            tz = "UTC")
+
+#new cleaning of data
+app_data_spatio <- app_data_clean %>%
+  select(created_at_utc, latitude, longitude, result, readable, parsed_result, parsed_confidence) %>%
+  arrange(created_at_utc) %>%
+  mutate(
+    # Temporal features
+    day_of_year = yday(created_at_utc),
+    month = month(created_at_utc),
+    week_of_year = week(created_at_utc),
+    hour = hour(created_at_utc),
+    date_numeric = as.numeric(created_at_utc),  # Days since epoch
+    
+    # Coordinate changes over time (velocity/movement)
+    lat_change = latitude - lag(latitude),
+    lon_change = longitude - lag(longitude),
+    coord_distance = sqrt(lat_change^2 + lon_change^2),  # Euclidean distance moved
+    lat_change_ma = zoo::rollmean(lat_change, k = 5, fill = NA),  # 5-point moving avg
+    lon_change_ma = zoo::rollmean(lon_change, k = 5, fill = NA)
+  ) %>%
+  
+  #small problem here, makes the first and last two rows NAs, which the model can't handle, so we're going to back/forward fill
+  
+  tidyr::fill(lat_change, lon_change, lat_change_ma, lon_change_ma, .direction = "down") %>%
+  tidyr::fill(lat_change, lon_change, lat_change_ma, lon_change_ma, .direction = "up") %>%
+  filter(!is.na(lat_change) & !is.na(lon_change)) #removing NAs from lagging
+app_data_spatio
+
+set.seed(925)
+
+# Remove any remaining NAs from all columns used in the model
+train_coord_index <- createDataPartition(app_data_spatio$day_of_year, p = 0.8, list = FALSE)
+train_coord_data <- app_data_spatio[train_coord_index, ] %>%
+  na.omit()  # Remove any row with ANY NA value
+
+test_coord_data <- app_data_spatio[-train_coord_index, ] %>%
+  na.omit()
+
+# Check how many rows remain
+cat("Training rows:", nrow(train_coord_data), "\n")
+cat("Testing rows:", nrow(test_coord_data), "\n")
+
+# Lat model
+lat_model <- train(
+  latitude ~ day_of_year + month + week_of_year + hour + lat_change_ma + lon_change_ma + coord_distance,
+  data = train_coord_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+# Lon model
+lon_model <- train(
+  longitude ~ day_of_year + month + week_of_year + hour + lat_change_ma + lon_change_ma + coord_distance,
+  data = train_coord_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5) 
+)
+
+print(lat_model)
+print(lon_model)
+```
+
+Make predictions on the test set
+```{r}
+lat_predictions <- predict(lat_model, newdata = test_coord_data)
+lon_predictions <- predict(lon_model, newdata = test_coord_data)
+
+#compare actual vs. predicted coordinates
+coord_results <- data.frame(
+  actual_latitude = test_coord_data$latitude,
+  predicted_latitude = lat_predictions,
+  actual_longitude = test_coord_data$longitude,
+  predicted_longitude = lon_predictions,
+  lat_error = test_coord_data$latitude - lat_predictions,
+  lon_error = test_coord_data$longitude - lon_predictions
+)
+
+# root mean squared error!
+rmse_lat <- sqrt(mean(coord_results$lat_error^2))
+rmse_lon <- sqrt(mean(coord_results$lon_error^2))
+
+cat("Latitude RMSE: ", rmse_lat, "\n")
+cat("Longitude RMSE: ", rmse_lon, "\n")
+
+#latitude
+ggplot(coord_results, aes(x = actual_latitude, y = predicted_latitude)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "blue", linetype = "dashed") +
+  labs(title = "Predicted vs. Actual Latitude",
+       x = "Actual Latitude",
+       y = "Predicted Latitude") +
+  theme_minimal()
+
+#longitude
+ggplot(coord_results, aes(x = actual_longitude, y = predicted_longitude)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs. Actual Longitude",
+       x = "Actual Longitude", y = "Predicted Longitude") +
+  theme_minimal()
+```
+
+#Predicting Tick Location
+
+##annotate and understand
+
+```{r}
+# Create a dataframe with predicted coordinates and additional info
+predicted_ticks <- data.frame(
+  predicted_latitude = coord_results$predicted_latitude,
+  predicted_longitude = coord_results$predicted_longitude,
+  actual_latitude = coord_results$actual_latitude,
+  actual_longitude = coord_results$actual_longitude,
+  lat_error = coord_results$lat_error,
+  lon_error = coord_results$lon_error,
+  prediction_error = sqrt(coord_results$lat_error^2 + coord_results$lon_error^2),
+  datetime = test_coord_data$created_at_utc,
+  day_of_year = test_coord_data$day_of_year,
+  month = test_coord_data$month,
+  result = test_coord_data$result,
+  parsed_result = test_coord_data$parsed_result,
+  parsed_confidence = test_coord_data$parsed_confidence
+)
+
+head(predicted_ticks)
+
+# Basic world map with predicted tick locations
+ggplot(predicted_ticks, aes(x = predicted_longitude, y = predicted_latitude)) +
+  borders("world", colour = "gray85", fill = "gray80") +
+  geom_point(aes(color = prediction_error), alpha = 0.6, size = 2) +
+  scale_color_gradient(low = "green", high = "red", name = "Prediction Error") +
+  labs(title = "Predicted Tick Coordinates Worldwide",
+       x = "Longitude",
+       y = "Latitude",
+       subtitle = "Green = low error, Red = high error") +
+  theme_minimal() +
+  coord_fixed()
+
+# Alternative: Color by month (seasonal pattern)
+ggplot(predicted_ticks, aes(x = predicted_longitude, y = predicted_latitude)) +
+  borders("world", colour = "gray85", fill = "gray80") +
+  geom_point(aes(color = factor(month)), alpha = 0.6, size = 2) +
+  labs(title = "Predicted Tick Coordinates by Month",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Month") +
+  theme_minimal() +
+  coord_fixed()
+
+# Alternative: Color by result (positive vs negative)
+ggplot(predicted_ticks, aes(x = predicted_longitude, y = predicted_latitude)) +
+  borders("world", colour = "gray85", fill = "gray80") +
+  geom_point(aes(color = result), alpha = 0.6, size = 2) +
+  labs(title = "Predicted Tick Coordinates by Result",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Result") +
+  theme_minimal() +
+  coord_fixed()
+```
+#Map Style
+
+```{r}
+# Filter to a reasonable sample if you have too many points
+predicted_ticks_sample <- predicted_ticks %>%
+  sample_n(min(1000, nrow(predicted_ticks)))
+
+# Create color palette based on prediction error
+pal <- colorNumeric(palette = "RdYlGn", domain = predicted_ticks_sample$prediction_error, reverse = TRUE)
+
+# Interactive map
+leaflet(predicted_ticks_sample) %>%
+  addTiles() %>%  # Add OpenStreetMap background
+  addCircleMarkers(
+    lng = ~predicted_longitude,
+    lat = ~predicted_latitude,
+    radius = 5,
+    color = ~pal(prediction_error),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = paste("Predicted Lat:", round(predicted_ticks_sample$predicted_latitude, 4), "<br>",
+                  "Predicted Lon:", round(predicted_ticks_sample$predicted_longitude, 4), "<br>",
+                  "Error:", round(predicted_ticks_sample$prediction_error, 4))
+  ) %>%
+  addLegend(pal = pal, values = ~prediction_error, title = "Prediction Error")
+```
+
+Let's calculate and show a tick risk score!
+
+```{r}
+# Grid resolution: 0.5 degrees
+grid_resolution <- 0.5
+
+# Create a comprehensive dataframe with both predicted and actual coordinates
+risk_data <- data.frame(
+  longitude = c(predicted_ticks$predicted_longitude, predicted_ticks$actual_longitude),
+  latitude = c(predicted_ticks$predicted_latitude, predicted_ticks$actual_latitude),
+  confidence = c(predicted_ticks$parsed_confidence, predicted_ticks$parsed_confidence),
+  source = c(rep("predicted", nrow(predicted_ticks)), rep("actual", nrow(predicted_ticks)))
+)
+
+# Remove any NA values and convert confidence to numeric
+risk_data <- risk_data %>% 
+  mutate(confidence = as.numeric(confidence)) %>%
+  filter(!is.na(longitude) & !is.na(latitude) & !is.na(confidence))
+
+# Assign each point to a grid cell using floor division (more robust)
+risk_data <- risk_data %>%
+  mutate(
+    grid_lon = floor(longitude / grid_resolution) * grid_resolution,
+    grid_lat = floor(latitude / grid_resolution) * grid_resolution
+  )
+
+# Calculate risk score: sum of parsed_confidence per grid cell
+risk_scores <- risk_data %>%
+  group_by(grid_lon, grid_lat) %>%
+  summarise(
+    risk_score = sum(confidence, na.rm = TRUE),
+    point_count = n(),
+    avg_confidence = mean(confidence, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# Create global grid
+lat_min <- -90
+lat_max <- 90
+lon_min <- -180
+lon_max <- 180
+
+lat_breaks <- seq(lat_min, lat_max, by = grid_resolution)
+lon_breaks <- seq(lon_min, lon_max, by = grid_resolution)
+
+grid_cells <- expand.grid(
+  grid_lon = lon_breaks,
+  grid_lat = lat_breaks
+)
+
+# Join with full grid to fill in zeros
+risk_grid <- grid_cells %>%
+  left_join(risk_scores, by = c("grid_lon" = "grid_lon", "grid_lat" = "grid_lat")) %>%
+  mutate(
+    risk_score = replace_na(risk_score, 0),
+    point_count = replace_na(point_count, 0),
+    avg_confidence = replace_na(avg_confidence, 0)
+  )
+
+# Create rectangles for each grid cell
+risk_grid <- risk_grid %>%
+  mutate(
+    lon_min = grid_lon - grid_resolution/2,
+    lon_max = grid_lon + grid_resolution/2,
+    lat_min = grid_lat - grid_resolution/2,
+    lat_max = grid_lat + grid_resolution/2
+  )
+
+# Normalize risk score for color mapping (0-1)
+risk_grid$risk_normalized <- scales::rescale(risk_grid$risk_score, to = c(0, 1))
+
+# Create color palette using viridis
+viridis_pal <- leaflet::colorNumeric(
+  palette = "viridis",
+  domain = risk_grid$risk_normalized,
+  na.color = NA
+)
+
+# Create interactive leaflet map
+leaflet(risk_grid) %>%
+  addTiles(urlTemplate = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+           attribution = '© OpenStreetMap contributors') %>%
+  addRectangles(
+    lng1 = ~lon_min,
+    lng2 = ~lon_max,
+    lat1 = ~lat_min,
+    lat2 = ~lat_max,
+    color = ~viridis_pal(risk_normalized),
+    fillOpacity = 0.7,
+    weight = 0.5,
+    popup = paste(
+      "Latitude:", ~round(grid_lat, 2), "<br>",
+      "Longitude:", ~round(grid_lon, 2), "<br>",
+      "Risk Score:", ~round(risk_score, 2), "<br>",
+      "Point Count:", ~point_count, "<br>",
+      "Avg Confidence:", ~round(avg_confidence, 3)
+    ),
+    highlightOptions = highlightOptions(
+      color = "white",
+      weight = 2,
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    pal = viridis_pal,
+    values = ~risk_normalized,
+    title = "Tick Risk Score",
+    position = "bottomright",
+    labels = c("Low", "High")
+  ) %>%
+  setView(lng = 0, lat = 20, zoom = 2)
+```
+
+
+
+
+
+
 
