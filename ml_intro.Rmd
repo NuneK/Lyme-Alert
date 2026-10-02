@@ -384,7 +384,6 @@ points in a color, then color for the predicted points.
 
 ```{r}
 app_data_clean
-
 ```
 
 
@@ -399,10 +398,10 @@ app_data_clean$created_at_utc <- as.POSIXct(app_data_clean$created_at_utc,
                                             format = "%Y-%m-%dT%H:%M:%OS",
                                             tz = "UTC")
 
-#new cleaning of data
+#new cleaning of data, collecting only the elements we're using in prediction
 app_data_spatio <- app_data_clean %>%
   select(created_at_utc, latitude, longitude, result, readable, parsed_result, parsed_confidence) %>%
-  arrange(created_at_utc) %>%
+  arrange(created_at_utc) %>% #arrange in order of collection date
   mutate(
     # Temporal features
     day_of_year = yday(created_at_utc),
@@ -589,6 +588,11 @@ Let's calculate and show a tick risk score!
 
 ```{r}
 # Grid resolution: 0.5 degrees
+# this is actually not that granular given the data we have, but tbh if I make
+# it any more specific, it'll take forever to run here. 
+
+# will probably make more granular once data is limited to the U.S.
+
 grid_resolution <- 0.5
 
 # Create a comprehensive dataframe with both predicted and actual coordinates
@@ -644,7 +648,7 @@ risk_grid <- grid_cells %>%
     avg_confidence = replace_na(avg_confidence, 0)
   )
 
-# Create rectangles for each grid cell
+# Create rectangles for each grid cell, these change with grid_resolution
 risk_grid <- risk_grid %>%
   mutate(
     lon_min = grid_lon - grid_resolution/2,
@@ -699,7 +703,12 @@ leaflet(risk_grid) %>%
 ```
 
 
+Notes for the next iteration:
 
+- Limit mode training and testing data to coordinates within lat[24.37, 47] and lon[125, 70]
+- Link weather API to pull humidity, temperature, and precipitation data for each day/point
+- Ensure the lat/lon change calculations are only within the U.S.
+- 
 
 
 
